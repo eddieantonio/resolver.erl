@@ -6,9 +6,11 @@
 
 send_query(IPAddress, DomainName, RecordType) ->
     Query = build_query(DomainName, RecordType),
-    io:format("Sending ~p...~n", [Query]),
-    {ok, Socket} = gen_udp:open(0, [inet, binary]),
-    gen_udp:send(Socket, IPAddress, 53, Query).
+    {ok, Socket} = gen_udp:open(0, [inet, binary, {active, false}]),
+    gen_udp:send(Socket, IPAddress, 53, Query),
+    Reply = gen_udp:recv(Socket, 1024, 30 * 1000),
+    gen_udp:close(Socket),
+    Reply.
 
 build_query(DomainName, RecordType) ->
     ID = random_id(),
