@@ -1,8 +1,6 @@
 -module(resolver).
 
--export([build_query/2, send_query/3]).
-%-export([header_to_bytes/2]).
-%-compile([export_all]).
+-export([send_query/3, number_to_record_type/1]).
 
 send_query(IPAddress, DomainName, RecordType) ->
     Query = build_query(DomainName, RecordType),
@@ -14,13 +12,23 @@ send_query(IPAddress, DomainName, RecordType) ->
 
 build_query(DomainName, RecordType) ->
     ID = random_id(),
-    Header = header_to_bytes(ID, 1, 1, 0, 0, 0),
+    Header = header_to_bytes(#{id => ID,
+                               flags => 0,
+                               n_questions => 1}),
     Question = question_to_bytes(DomainName, RecordType, in),
     [Header, Question].
 
 random_id() ->
     rand:uniform(65536) - 1.
 
+header_to_bytes(Header) ->
+    #{id := ID} = Header,
+    header_to_bytes(ID,
+                    maps:get(flags, Header, 0),
+                    maps:get(n_questions, Header, 0),
+                    maps:get(n_answers, Header, 0),
+                    maps:get(n_authorities, Header, 0),
+                    maps:get(n_additionals, Header, 0)).
 header_to_bytes(ID, Flags, NQuestions, NAnswers, NAuthorities, NAdditionals) ->
     <<ID:16/big,
       Flags:16/big,
