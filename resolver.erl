@@ -1,7 +1,7 @@
 %% resolver - DNS resolver.
 -module(resolver).
 
--export([send_query/3, build_query/2, number_to_record_type/1]).
+-export([send_query/3, build_query/2, number_to_record_type/1, labels/1]).
 
 -type u16() :: 0..65535.
 -type record_type() :: a | cname.
@@ -57,24 +57,47 @@ question_to_bytes({encoded, EncodedName}, RecordType, Class) ->
 
 -spec encode_dns_name(string()) -> iolist().
 encode_dns_name(Name) ->
-    [[[Length, Component] || {Length, Component} <- to_components(Name)], 0].
+    [[[Length, Label] || {Length, Label} <- labels(Name)], 0].
 
-to_components(Name) ->
-    lists:reverse(to_components(Name, [], [])).
+-type label_length() :: 0..63.
+-type label() :: {label_length(), string()}.
+-spec labels(string()) -> [label()].
+labels(Name) ->
+    labels(lists:reverse(Name), [], 0, []).
 
-% Parsed the end, no trailing dot.
-to_components([], [], Acc) ->
+%% labels/4 parses from the end of the string to the beginning.
+%%
+%% It iterates over each character, prepending it to current label.  When it
+%% reaches a ".", it prepends the complete label to the accumulator.
+%%
+%% e.g.,
+%%  labels("example.com")
+%%      ---> labels("moc.elpmaxe", "", 0, [])
+%%      ...
+%%      ---> labels(".elpmaxe", "com", 3, [])
+%%      ---> labels("elpmaxe", "", 0, [{3, "com"}])
+%%      ---> labels("", "example", 7, [{3, "com"}])
+%%      ---> [{7, "example"}, {3, "com"}].
+%%
+-spec labels(Reversed :: string(),
+             Current :: string(),
+             Length :: label_length(),
+             Acc :: [label()]) -> [label()].
+labels([], [], 0, Acc) ->
+    % Edge case: Reached the end, but no current label.
     Acc;
-to_components([], Current, Acc) ->
-    [as_component(Current)|Acc];
-to_components([$.|Rest], Current, Acc) ->
-    to_components(Rest, [], [as_component(Current)|Acc]);
-to_components([Char|Rest], Current, Acc) ->
-    to_components(Rest, [Char|Current], Acc).
-
--spec as_component(string()) -> {non_neg_integer(), string()}.
-as_component(ReversedComponent) ->
-    {length(ReversedComponent), lists:reverse(ReversedComponent)}.
+labels([], Current, Length, Acc) ->
+    % Parsed entire end of string. Add the last label.
+    [{Length, Current}|Acc];
+labels([$.|Rest], [], 0, Acc) ->
+    % Edge case: empty label -- just skip it.
+    labels(Rest, [], 0, Acc);
+labels([$.|Rest], Current, Length, Acc) ->
+    % Complete label; start the next one.
+    labels(Rest, [], 0, [{Length, Current}|Acc]);
+labels([Char|Rest], Current, Length, Acc) when Length < 63 ->
+    % General case: add a character to the current label.
+    labels(Rest, [Char|Current], Length + 1, Acc).
 
 -spec record_type_to_number(record_type()) -> 0..65535.
 record_type_to_number(a) -> 1;
