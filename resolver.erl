@@ -1,10 +1,15 @@
 %% resolver - DNS resolver.
 -module(resolver).
 
--export([send_query/3, build_query/2, number_to_record_type/1, labels/1]).
+-export([send_query/2, send_query/3, build_query/2, number_to_record_type/1,
+         labels/1, test_case/0, parse_dns_packet/1]).
 
 -type u16() :: 0..65535.
--type record_type() :: a | cname.
+-type u32() :: 0..4294967296.
+
+-type record_type() :: a | cname | ns.
+-type class() :: in | cs | ch | hs.
+
 -record(dns_header, {id :: u16(),
                      flags = 0 :: u16(),
                      n_questions = 0 :: u16(),
@@ -12,13 +17,29 @@
                      n_authorities = 0 :: u16(),
                      n_additionals = 0 :: u16()}).
 
+-record(dns_question, {name :: string(),
+                       type :: record_type(),
+                       class :: class()}).
+-record(dns_record, {name :: string(),
+                     type :: record_type(),
+                     class :: class(),
+                     ttl :: u32(),
+                     data :: binary()}).
+
+send_query(DomainName, RecordType) ->
+    send_query(current_resolver(), DomainName, RecordType).
 send_query(IPAddress, DomainName, RecordType) ->
     Query = build_query(DomainName, RecordType),
     {ok, Socket} = gen_udp:open(0, [inet, binary, {active, false}]),
     ok = gen_udp:send(Socket, IPAddress, 53, Query),
     Reply = catch gen_udp:recv(Socket, 1024, 30 * 1000),
     gen_udp:close(Socket),
-    Reply.
+    case Reply of
+        {ok, Packet} -> {ok, parse_dns_packet(Packet)};
+        Err -> Err
+    end.
+
+%% Serialization %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -spec build_query(string(), record_type()) -> iolist().
 build_query(DomainName, RecordType) ->
@@ -27,10 +48,6 @@ build_query(DomainName, RecordType) ->
                                          n_questions = 1}),
     Question = question_to_bytes(DomainName, RecordType, in),
     [Header, Question].
-
--spec random_id() -> u16().
-random_id() ->
-    rand:uniform(65536) - 1.
 
 -spec header_to_bytes(#dns_header{}) -> <<_:96>>.
 header_to_bytes(#dns_header{id = ID,
@@ -99,13 +116,117 @@ labels([Char|Rest], Current, Length, Acc) when Length < 63 ->
     % General case: add a character to the current label.
     labels(Rest, [Char|Current], Length + 1, Acc).
 
--spec record_type_to_number(record_type()) -> 0..65535.
+
+%% Parsing/Deserialization %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+parse_dns_packet(Bytes) ->
+    <<ID:16/big,
+      Flags:16/big,
+      NQuestions:16/big,
+      NAnswers:16/big,
+      NAuthorities:16/big,
+      NAdditionals:16/big,
+      R0/binary>> = Bytes,
+    Header = #dns_header{id=ID, flags=Flags, n_questions=NQuestions,
+                 n_answers=NAnswers, n_authorities=NAuthorities,
+                 n_additionals=NAdditionals},
+    {Questions, R1} = parse_questions(R0, NQuestions),
+    {Answers, R2} = parse_records(R1, NAnswers),
+    {Authorities, R3} = parse_records(R2, NAuthorities),
+    {Additionals, Rest} = parse_records(R3, NAdditionals),
+    {Header, Questions, Answers, Authorities, Additionals, Rest}.
+
+
+parse_questions(Bytes, N) ->
+    parse_questions(Bytes, N, []).
+
+parse_questions(Bytes, 0, Questions) ->
+    {Questions, Bytes};
+parse_questions(Bytes, N, Acc) ->
+    {Name, Rest} = decode_name_simple(Bytes),
+    <<Type:16/big, Class:16/big, Remainder/binary>> = Rest,
+    Current = #dns_question{name = Name,
+                            type = number_to_record_type(Type),
+                            class = number_to_class(Class)},
+    parse_questions(Remainder, N - 1, [Current|Acc]).
+
+
+parse_records(Bytes, N) ->
+    parse_records(Bytes, N, []).
+
+parse_records(Bytes, 0, Records) ->
+    {Records, Bytes};
+parse_records(Bytes, N, Acc) ->
+    {Name, Rest} = decode_name_simple(Bytes),
+    <<Type:16/big, Class:16/big, TTL:32/big, DataLen:16/big, PossiblyData/binary>> = Rest,
+    <<Data:DataLen/binary, Remainder/binary>> = PossiblyData,
+    Current = #dns_record{name = Name,
+                          type = number_to_record_type(Type),
+                          class = number_to_class(Class),
+                          ttl = TTL,
+                          data = Data},
+    parse_records(Remainder, N - 1, [Current|Acc]).
+
+decode_name_simple(Bytes) ->
+    {ReversedLabels, Rest} = decode_name_simple(Bytes, []),
+    Name = lists:flatten(lists:join(".", lists:reverse(ReversedLabels))),
+    {Name, Rest}.
+
+decode_name_simple(<<0, Rest/binary>>, Acc) ->
+    {[binary_to_list(Label) || Label <- Acc], Rest};
+decode_name_simple(<<Length, Data/binary>>, Acc) when Length =< 63 ->
+    <<Label:Length/binary, Rest/binary>> = Data,
+    decode_name_simple(Rest, [Label|Acc]).
+
+
+%% DNS data %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-spec record_type_to_number(record_type()) -> u16().
 record_type_to_number(a) -> 1;
 record_type_to_number(ns) -> 2;
 record_type_to_number(cname) -> 5.
 
+-spec number_to_record_type(u16()) -> record_type().
 number_to_record_type(1) -> a;
 number_to_record_type(2) -> ns;
 number_to_record_type(5) -> cname.
 
+% These functions are sort of pointless.
+-spec class_to_number(class()) -> u16().
 class_to_number(in) -> 1.
+%class_to_number(cs) -> 2;
+%class_to_number(ch) -> 3;
+%class_to_number(hs) -> 4.
+-spec number_to_class(u16()) -> class().
+number_to_class(1) -> in;
+number_to_class(2) -> cs;
+number_to_class(3) -> ch;
+number_to_class(4) -> hs.
+
+
+%% Utilities %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-spec random_id() -> u16().
+random_id() ->
+    rand:uniform(65536) - 1.
+
+current_resolver() -> {162,252,172,57}.
+
+test_case() -> <<63,156,128,128,0,1,0,1,0,13,0,14,7,101,120,97,109,112,108,101,3,99,111,109,0,
+  0,1,0,1,192,12,0,1,0,1,0,0,7,81,0,4,93,184,216,34,192,20,0,2,0,1,0,0,4,122,0,
+  20,1,100,12,103,116,108,100,45,115,101,114,118,101,114,115,3,110,101,116,0,
+  192,20,0,2,0,1,0,0,4,122,0,4,1,105,192,59,192,20,0,2,0,1,0,0,4,122,0,4,1,108,
+  192,59,192,20,0,2,0,1,0,0,4,122,0,4,1,107,192,59,192,20,0,2,0,1,0,0,4,122,0,
+  4,1,98,192,59,192,20,0,2,0,1,0,0,4,122,0,4,1,101,192,59,192,20,0,2,0,1,0,0,4,
+  122,0,4,1,97,192,59,192,20,0,2,0,1,0,0,4,122,0,4,1,102,192,59,192,20,0,2,0,1,
+  0,0,4,122,0,4,1,103,192,59,192,20,0,2,0,1,0,0,4,122,0,4,1,109,192,59,192,20,
+  0,2,0,1,0,0,4,122,0,4,1,99,192,59,192,20,0,2,0,1,0,0,4,122,0,4,1,106,192,59,
+  192,20,0,2,0,1,0,0,4,122,0,4,1,104,192,59,192,169,0,1,0,1,0,0,4,122,0,4,192,
+  5,6,30,192,137,0,1,0,1,0,0,4,122,0,4,192,33,14,30,192,233,0,1,0,1,0,0,4,122,
+  0,4,192,26,92,30,192,57,0,1,0,1,0,0,4,122,0,4,192,31,80,30,192,153,0,1,0,1,0,
+  0,4,122,0,4,192,12,94,30,192,185,0,1,0,1,0,0,4,122,0,4,192,35,51,30,192,201,
+  0,1,0,1,0,0,4,122,0,4,192,42,93,30,193,9,0,1,0,1,0,0,4,122,0,4,192,54,112,30,
+  192,89,0,1,0,1,0,0,4,122,0,4,192,43,172,30,192,249,0,1,0,1,0,0,4,122,0,4,192,
+  48,79,30,192,121,0,1,0,1,0,0,4,122,0,4,192,52,178,30,192,105,0,1,0,1,0,0,4,
+  122,0,4,192,41,162,30,192,217,0,1,0,1,0,0,4,122,0,4,192,55,83,30,192,169,0,
+  28,0,1,0,0,4,122,0,16,32,1,5,3,168,62,0,0,0,0,0,0,0,2,0,48>>.
