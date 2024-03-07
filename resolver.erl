@@ -1,35 +1,38 @@
 -module(resolver).
 
--export([send_query/3, number_to_record_type/1]).
+-export([send_query/3, build_query/2, number_to_record_type/1]).
+
+-record(dns_header, {id,
+                     flags = 0,
+                     n_questions = 0,
+                     n_answers = 0,
+                     n_authorities = 0,
+                     n_additionals = 0}).
 
 send_query(IPAddress, DomainName, RecordType) ->
     Query = build_query(DomainName, RecordType),
     {ok, Socket} = gen_udp:open(0, [inet, binary, {active, false}]),
     gen_udp:send(Socket, IPAddress, 53, Query),
-    Reply = gen_udp:recv(Socket, 1024, 30 * 1000),
+    Reply = catch gen_udp:recv(Socket, 1024, 30 * 1000),
     gen_udp:close(Socket),
     Reply.
 
 build_query(DomainName, RecordType) ->
     ID = random_id(),
-    Header = header_to_bytes(#{id => ID,
-                               flags => 0,
-                               n_questions => 1}),
+    Header = header_to_bytes(#dns_header{id = ID,
+                                         n_questions = 1}),
     Question = question_to_bytes(DomainName, RecordType, in),
     [Header, Question].
 
 random_id() ->
     rand:uniform(65536) - 1.
 
-header_to_bytes(Header) ->
-    #{id := ID} = Header,
-    header_to_bytes(ID,
-                    maps:get(flags, Header, 0),
-                    maps:get(n_questions, Header, 0),
-                    maps:get(n_answers, Header, 0),
-                    maps:get(n_authorities, Header, 0),
-                    maps:get(n_additionals, Header, 0)).
-header_to_bytes(ID, Flags, NQuestions, NAnswers, NAuthorities, NAdditionals) ->
+header_to_bytes(#dns_header{id = ID,
+                            flags = Flags,
+                            n_questions = NQuestions,
+                            n_answers = NAnswers,
+                            n_authorities = NAuthorities,
+                            n_additionals = NAdditionals}) ->
     <<ID:16/big,
       Flags:16/big,
       NQuestions:16/big,
