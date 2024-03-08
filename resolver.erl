@@ -151,7 +151,7 @@ parse_questions(Bytes, N, Acc) ->
     parse_questions(Remainder, N - 1, [Current|Acc]).
 
 
--spec parse_records(binary(), non_neg_integer(), binary()) -> {#dns_record{}, binary()}.
+-spec parse_records(binary(), non_neg_integer(), binary()) -> {[#dns_record{}], binary()}.
 parse_records(Bytes, N, Datagram) ->
     parse_records(Bytes, N, Datagram, []).
 parse_records(Bytes, 0, _Datagram, Records) ->
