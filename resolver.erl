@@ -1,8 +1,10 @@
 %% resolver - DNS resolver.
+%%
 -module(resolver).
+-export([send_query/2, send_query/3]).
 
--export([send_query/2, send_query/3, build_query/2, number_to_record_type/1,
-         labels/1, test_case/0, parse_dns_packet/1]).
+
+%% Types %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -type u16() :: 0..65535.
 -type u32() :: 0..4294967296.
@@ -10,6 +12,7 @@
 -type record_type() :: a | aaaa | cname | ns.
 -type class() :: in | cs | ch | hs.
 
+%% DNS header, for serialization and deserialization.
 -record(dns_header, {id :: u16(),
                      flags = 0 :: u16(),
                      n_questions = 0 :: u16(),
@@ -17,14 +20,18 @@
                      n_authorities = 0 :: u16(),
                      n_additionals = 0 :: u16()}).
 
+% DNS question, for use within Erlang.
 -record(dns_question, {name :: string(),
                        type :: record_type(),
                        class :: class()}).
+
+% DNS record, for use within Erlang.
 -record(dns_record, {name :: string(),
                      type :: record_type(),
                      class :: class(),
                      ttl :: u32(),
-                     data :: binary()}).
+                     % data depends on the record type.
+                     data :: any()}).
 
 send_query(DomainName, RecordType) ->
     send_query(current_resolver(), DomainName, RecordType).
@@ -35,9 +42,10 @@ send_query(IPAddress, DomainName, RecordType) ->
     Reply = catch gen_udp:recv(Socket, 1024, 30 * 1000),
     gen_udp:close(Socket),
     case Reply of
-        {ok, Packet} -> {ok, parse_dns_packet(Packet)};
+        {ok, {_IP, _Port, Packet}} -> {ok, parse_dns_packet(Packet)};
         Err -> Err
     end.
+
 
 %% Serialization %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -45,6 +53,7 @@ send_query(IPAddress, DomainName, RecordType) ->
 build_query(DomainName, RecordType) ->
     ID = random_id(),
     Header = header_to_bytes(#dns_header{id = ID,
+                                         flags = 0,
                                          n_questions = 1}),
     Question = question_to_bytes(DomainName, RecordType, in),
     [Header, Question].
@@ -130,25 +139,25 @@ parse_dns_packet(Datagram) ->
     Header = #dns_header{id=ID, flags=Flags, n_questions=NQuestions,
                          n_answers=NAnswers, n_authorities=NAuthorities,
                          n_additionals=NAdditionals},
-    {Questions, R1} = parse_questions(R0, NQuestions),
+    {Questions, R1} = parse_questions(R0, NQuestions, Datagram),
     {Answers, R2} = parse_records(R1, NAnswers, Datagram),
     {Authorities, R3} = parse_records(R2, NAuthorities, Datagram),
     {Additionals, <<>>} = parse_records(R3, NAdditionals, Datagram),
     {Header, Questions, Answers, Authorities, Additionals}.
 
 
-parse_questions(Bytes, N) ->
-    parse_questions(Bytes, N, []).
+parse_questions(Bytes, N, Datagram) ->
+    parse_questions(Bytes, N, Datagram, []).
 
-parse_questions(Bytes, 0, Questions) ->
+parse_questions(Bytes, 0, _, Questions) ->
     {Questions, Bytes};
-parse_questions(Bytes, N, Acc) ->
-    {Name, Rest} = decode_name_simple(Bytes),
+parse_questions(Bytes, N, Datagram, Acc) ->
+    {Name, Rest} = decode_name(Bytes, Datagram),
     <<Type:16/big, Class:16/big, Remainder/binary>> = Rest,
     Current = #dns_question{name = Name,
                             type = number_to_record_type(Type),
                             class = number_to_class(Class)},
-    parse_questions(Remainder, N - 1, [Current|Acc]).
+    parse_questions(Remainder, N - 1, Datagram, [Current|Acc]).
 
 
 -spec parse_records(binary(), non_neg_integer(), binary()) -> {[#dns_record{}], binary()}.
@@ -188,17 +197,6 @@ binary_part_til_end(Binary, Offset) ->
   Length = max(0, byte_size(Binary) - Offset),
   binary_part(Binary, {Offset, Length}).
 
-decode_name_simple(Bytes) ->
-    {ReversedLabels, Rest} = decode_name_simple(Bytes, []),
-    Name = lists:flatten(lists:join(".", lists:reverse(ReversedLabels))),
-    {Name, Rest}.
-
-decode_name_simple(<<0, Rest/binary>>, Acc) ->
-    {[binary_to_list(Label) || Label <- Acc], Rest};
-decode_name_simple(<<Length, Data/binary>>, Acc) when Length =< 63 ->
-    <<Label:Length/binary, Rest/binary>> = Data,
-    decode_name_simple(Rest, [Label|Acc]).
-
 
 %% DNS data %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -216,9 +214,7 @@ number_to_record_type(28) -> aaaa.
 % These functions are sort of pointless.
 -spec class_to_number(class()) -> u16().
 class_to_number(in) -> 1.
-%class_to_number(cs) -> 2;
-%class_to_number(ch) -> 3;
-%class_to_number(hs) -> 4.
+
 -spec number_to_class(u16()) -> class().
 number_to_class(1) -> in;
 number_to_class(2) -> cs;
@@ -232,23 +228,8 @@ number_to_class(4) -> hs.
 random_id() ->
     rand:uniform(65536) - 1.
 
+% Run
+%   !./get-resolvers.sh -e
+% to get the current resolver IP address(es) in Erlang syntax.
+-spec current_resolver() -> inet:ip4_address().
 current_resolver() -> {162,252,172,57}.
-
-test_case() -> <<63,156,128,128,0,1,0,1,0,13,0,14,7,101,120,97,109,112,108,101,3,99,111,109,0,
-  0,1,0,1,192,12,0,1,0,1,0,0,7,81,0,4,93,184,216,34,192,20,0,2,0,1,0,0,4,122,0,
-  20,1,100,12,103,116,108,100,45,115,101,114,118,101,114,115,3,110,101,116,0,
-  192,20,0,2,0,1,0,0,4,122,0,4,1,105,192,59,192,20,0,2,0,1,0,0,4,122,0,4,1,108,
-  192,59,192,20,0,2,0,1,0,0,4,122,0,4,1,107,192,59,192,20,0,2,0,1,0,0,4,122,0,
-  4,1,98,192,59,192,20,0,2,0,1,0,0,4,122,0,4,1,101,192,59,192,20,0,2,0,1,0,0,4,
-  122,0,4,1,97,192,59,192,20,0,2,0,1,0,0,4,122,0,4,1,102,192,59,192,20,0,2,0,1,
-  0,0,4,122,0,4,1,103,192,59,192,20,0,2,0,1,0,0,4,122,0,4,1,109,192,59,192,20,
-  0,2,0,1,0,0,4,122,0,4,1,99,192,59,192,20,0,2,0,1,0,0,4,122,0,4,1,106,192,59,
-  192,20,0,2,0,1,0,0,4,122,0,4,1,104,192,59,192,169,0,1,0,1,0,0,4,122,0,4,192,
-  5,6,30,192,137,0,1,0,1,0,0,4,122,0,4,192,33,14,30,192,233,0,1,0,1,0,0,4,122,
-  0,4,192,26,92,30,192,57,0,1,0,1,0,0,4,122,0,4,192,31,80,30,192,153,0,1,0,1,0,
-  0,4,122,0,4,192,12,94,30,192,185,0,1,0,1,0,0,4,122,0,4,192,35,51,30,192,201,
-  0,1,0,1,0,0,4,122,0,4,192,42,93,30,193,9,0,1,0,1,0,0,4,122,0,4,192,54,112,30,
-  192,89,0,1,0,1,0,0,4,122,0,4,192,43,172,30,192,249,0,1,0,1,0,0,4,122,0,4,192,
-  48,79,30,192,121,0,1,0,1,0,0,4,122,0,4,192,52,178,30,192,105,0,1,0,1,0,0,4,
-  122,0,4,192,41,162,30,192,217,0,1,0,1,0,0,4,122,0,4,192,55,83,30,192,169,0,
-  28,0,1,0,0,4,122,0,16,32,1,5,3,168,62,0,0,0,0,0,0,0,2,0,48>>.
