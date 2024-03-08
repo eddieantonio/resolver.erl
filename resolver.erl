@@ -7,7 +7,7 @@
 -type u16() :: 0..65535.
 -type u32() :: 0..4294967296.
 
--type record_type() :: a | cname | ns.
+-type record_type() :: a | aaaa | cname | ns.
 -type class() :: in | cs | ch | hs.
 
 -record(dns_header, {id :: u16(),
@@ -119,22 +119,22 @@ labels([Char|Rest], Current, Length, Acc) when Length < 63 ->
 
 %% Parsing/Deserialization %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-parse_dns_packet(Bytes) ->
+parse_dns_packet(Datagram) ->
     <<ID:16/big,
       Flags:16/big,
       NQuestions:16/big,
       NAnswers:16/big,
       NAuthorities:16/big,
       NAdditionals:16/big,
-      R0/binary>> = Bytes,
+      R0/binary>> = Datagram,
     Header = #dns_header{id=ID, flags=Flags, n_questions=NQuestions,
-                 n_answers=NAnswers, n_authorities=NAuthorities,
-                 n_additionals=NAdditionals},
+                         n_answers=NAnswers, n_authorities=NAuthorities,
+                         n_additionals=NAdditionals},
     {Questions, R1} = parse_questions(R0, NQuestions),
-    {Answers, R2} = parse_records(R1, NAnswers),
-    {Authorities, R3} = parse_records(R2, NAuthorities),
-    {Additionals, Rest} = parse_records(R3, NAdditionals),
-    {Header, Questions, Answers, Authorities, Additionals, Rest}.
+    {Answers, R2} = parse_records(R1, NAnswers, Datagram),
+    {Authorities, R3} = parse_records(R2, NAuthorities, Datagram),
+    {Additionals, <<>>} = parse_records(R3, NAdditionals, Datagram),
+    {Header, Questions, Answers, Authorities, Additionals}.
 
 
 parse_questions(Bytes, N) ->
@@ -151,13 +151,13 @@ parse_questions(Bytes, N, Acc) ->
     parse_questions(Remainder, N - 1, [Current|Acc]).
 
 
-parse_records(Bytes, N) ->
-    parse_records(Bytes, N, []).
-
-parse_records(Bytes, 0, Records) ->
+-spec parse_records(binary(), non_neg_integer(), binary()) -> {#dns_record{}, binary()}.
+parse_records(Bytes, N, Datagram) ->
+    parse_records(Bytes, N, Datagram, []).
+parse_records(Bytes, 0, _Datagram, Records) ->
     {Records, Bytes};
-parse_records(Bytes, N, Acc) ->
-    {Name, Rest} = decode_name_simple(Bytes),
+parse_records(Bytes, N, Datagram, Acc) ->
+    {Name, Rest} = decode_name(Bytes, Datagram),
     <<Type:16/big, Class:16/big, TTL:32/big, DataLen:16/big, PossiblyData/binary>> = Rest,
     <<Data:DataLen/binary, Remainder/binary>> = PossiblyData,
     Current = #dns_record{name = Name,
@@ -165,7 +165,28 @@ parse_records(Bytes, N, Acc) ->
                           class = number_to_class(Class),
                           ttl = TTL,
                           data = Data},
-    parse_records(Remainder, N - 1, [Current|Acc]).
+    parse_records(Remainder, N - 1, Datagram, [Current|Acc]).
+
+
+decode_name(Bytes, Datagram) ->
+  {ReversedLabels, Rest} = decode_name(Bytes, Datagram, []),
+  Labels = [binary_to_list(Label) || Label <- lists:reverse(ReversedLabels)],
+  Name = lists:flatten(lists:join(".", Labels)),
+  {Name, Rest}.
+
+decode_name(<<0, Rest/binary>>, _Datagram, Labels)  ->
+  {Labels, Rest};
+decode_name(<<2#11:2, Offset:14, Rest/binary>>, Datagram, Labels) ->
+  EarlierChunk = binary_part_til_end(Datagram, Offset),
+  {NewLabels, _} = decode_name(EarlierChunk, Datagram, Labels),
+  {NewLabels, Rest};
+decode_name(<<Length, Data/binary>>, Datagram, Labels) when Length =< 63 ->
+  <<Label:Length/binary, Rest/binary>> = Data,
+  decode_name(Rest, Datagram, [Label|Labels]).
+
+binary_part_til_end(Binary, Offset) ->
+  Length = max(0, byte_size(Binary) - Offset),
+  binary_part(Binary, {Offset, Length}).
 
 decode_name_simple(Bytes) ->
     {ReversedLabels, Rest} = decode_name_simple(Bytes, []),
@@ -189,7 +210,8 @@ record_type_to_number(cname) -> 5.
 -spec number_to_record_type(u16()) -> record_type().
 number_to_record_type(1) -> a;
 number_to_record_type(2) -> ns;
-number_to_record_type(5) -> cname.
+number_to_record_type(5) -> cname;
+number_to_record_type(28) -> aaaa.
 
 % These functions are sort of pointless.
 -spec class_to_number(class()) -> u16().
