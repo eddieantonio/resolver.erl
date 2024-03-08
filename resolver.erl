@@ -49,11 +49,14 @@ send_query(IPAddress, DomainName, RecordType) ->
 
 %% Serialization %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+% Flags:
+-define(RECURSION_DESIRED, 1 bsl 8).
+
 -spec build_query(string(), record_type()) -> iolist().
 build_query(DomainName, RecordType) ->
     ID = random_id(),
     Header = header_to_bytes(#dns_header{id = ID,
-                                         flags = 0,
+                                         flags = ?RECURSION_DESIRED,
                                          n_questions = 1}),
     Question = question_to_bytes(DomainName, RecordType, in),
     [Header, Question].
@@ -169,13 +172,28 @@ parse_records(Bytes, N, Datagram, Acc) ->
     {Name, Rest} = decode_name(Bytes, Datagram),
     <<Type:16/big, Class:16/big, TTL:32/big, DataLen:16/big, PossiblyData/binary>> = Rest,
     <<Data:DataLen/binary, Remainder/binary>> = PossiblyData,
+    RecordType = number_to_record_type(Type),
+    ParsedData = parse_record_data(RecordType, Data, Datagram),
     Current = #dns_record{name = Name,
-                          type = number_to_record_type(Type),
+                          type = RecordType,
                           class = number_to_class(Class),
                           ttl = TTL,
-                          data = Data},
+                          data = ParsedData},
     parse_records(Remainder, N - 1, Datagram, [Current|Acc]).
 
+
+parse_record_data(a, <<A, B, C, D>>, _) ->
+  {A, B, C, D};
+parse_record_data(ns, Data, Packet) ->
+  decode_name_discard_data(Data, Packet);
+parse_record_data(cname, Data, Packet) ->
+  decode_name_discard_data(Data, Packet);
+parse_record_data(aaaa, <<A:16/big, B:16/big, C:16/big, D:16/big, E:16/big, F:16/big, G:16/big, H:16/big >>, _) ->
+  {A, B, C, D, E, F, G, H}.
+
+decode_name_discard_data(Data, Packet) ->
+  {Name, _} = decode_name(Data, Packet),
+  Name.
 
 decode_name(Bytes, Datagram) ->
   {ReversedLabels, Rest} = decode_name(Bytes, Datagram, []),
