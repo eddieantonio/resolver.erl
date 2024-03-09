@@ -33,8 +33,17 @@
                      % data depends on the record type.
                      data :: any()}).
 
+
+%% Public API %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% Send a DNS query to the current DNS resolver.
+%% Same as send_query/2 with the current DNS resolver.
+-spec send_query(DomainName :: string(), Type :: record_type()) -> any().
 send_query(DomainName, RecordType) ->
     send_query(current_resolver(), DomainName, RecordType).
+
+%% Send a DNS query to the DNS resolver at the given query.
+-spec send_query(inet:ip4_address(), string(), record_type()) -> any().
 send_query(IPAddress, DomainName, RecordType) ->
     Query = build_query(DomainName, RecordType),
     {ok, Socket} = gen_udp:open(0, [inet, binary, {active, false}]),
@@ -75,9 +84,9 @@ header_to_bytes(#dns_header{id = ID,
       NAuthorities:16/big,
       NAdditionals:16/big>>.
 
-question_to_bytes(Name, RecordType, Class) when is_list(Name) ->
-    question_to_bytes({encoded, encode_dns_name(Name)}, RecordType, Class);
-question_to_bytes({encoded, EncodedName}, RecordType, Class) ->
+-spec question_to_bytes(string(), record_type(), class()) -> iolist().
+question_to_bytes(Name, RecordType, Class) ->
+    EncodedName = encode_dns_name(Name),
     RecordTypeInt = record_type_to_number(RecordType),
     ClassInt = class_to_number(Class),
     [EncodedName,
