@@ -63,20 +63,20 @@
 %% Same as send_query/2 with the current DNS resolver.
 -spec send_query(DomainName :: string(), Type :: record_type()) -> any().
 send_query(DomainName, RecordType) ->
-    send_query(current_resolver(), DomainName, RecordType).
+  send_query(current_resolver(), DomainName, RecordType).
 
 %% Send a DNS query to the DNS resolver at the given query.
 -spec send_query(inet:ip4_address(), string(), record_type()) -> any().
 send_query(IPAddress, DomainName, RecordType) ->
-    Query = build_query(DomainName, RecordType),
-    {ok, Socket} = gen_udp:open(0, [inet, binary, {active, false}]),
-    ok = gen_udp:send(Socket, IPAddress, 53, Query),
-    Reply = catch gen_udp:recv(Socket, 1024, 30 * 1000),
-    gen_udp:close(Socket),
-    case Reply of
-        {ok, {_IP, _Port, Packet}} -> {ok, parse_dns_packet(Packet)};
-        Err -> Err
-    end.
+  Query = build_query(DomainName, RecordType),
+  {ok, Socket} = gen_udp:open(0, [inet, binary, {active, false}]),
+  ok = gen_udp:send(Socket, IPAddress, 53, Query),
+  Reply = catch gen_udp:recv(Socket, 1024, 30 * 1000),
+  gen_udp:close(Socket),
+  case Reply of
+    {ok, {_IP, _Port, Packet}} -> {ok, parse_dns_packet(Packet)};
+    Err -> Err
+  end.
 
 
 %% Serialization %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -84,56 +84,56 @@ send_query(IPAddress, DomainName, RecordType) ->
 
 -spec build_query(string(), record_type()) -> iolist().
 build_query(DomainName, RecordType) ->
-    ID = random_id(),
-    Flags = proplist_to_flags([recursion_desired]),
-    Header = header_to_bytes(#dns_header_out{id = ID,
-                                             flags = Flags,
-                                             n_questions = 1}),
-    Question = question_to_bytes(DomainName, RecordType, in),
-    [Header, Question].
+  ID = random_id(),
+  Flags = proplist_to_flags([recursion_desired]),
+  Header = header_to_bytes(#dns_header_out{id = ID,
+                                           flags = Flags,
+                                           n_questions = 1}),
+  Question = question_to_bytes(DomainName, RecordType, in),
+  [Header, Question].
 
 -spec proplist_to_flags([dns_flag()]) -> u16().
 proplist_to_flags(List) ->
-    proplist_to_flags(List, {0}).
+  proplist_to_flags(List, {0}).
 
 proplist_to_flags([], {RD}) ->
-    <<Flags:16/big>> =
-      % QR   Op   AA   TC   RD    RA   Z    Rcode
-      <<0:1, 0:4, 0:1, 0:1, RD:1, 0:1, 0:3, 0:4>>,
-    Flags;
+  %                    QR   Op   AA   TC   RD    RA   Z    Rcode
+  <<Flags:16/big>> = <<0:1, 0:4, 0:1, 0:1, RD:1, 0:1, 0:3, 0:4>>,
+  Flags;
 proplist_to_flags([recursion_desired|Rest], {_}) ->
-    proplist_to_flags(Rest, {1}).
+  proplist_to_flags(Rest, {1}).
 
 -spec header_to_bytes(#dns_header_out{}) -> <<_:96>>.
-header_to_bytes(#dns_header_out{id = ID,
-                                flags = Flags,
-                                n_questions = NQuestions,
-                                n_answers = NAnswers,
-                                n_authorities = NAuthorities,
-                                n_additionals = NAdditionals}) ->
-    <<ID:16/big,
-      Flags:16/big,
-      NQuestions:16/big,
-      NAnswers:16/big,
-      NAuthorities:16/big,
-      NAdditionals:16/big>>.
+header_to_bytes(Header) ->
+  #dns_header_out{id = ID,
+                  flags = Flags,
+                  n_questions = NQuestions,
+                  n_answers = NAnswers,
+                  n_authorities = NAuthorities,
+                  n_additionals = NAdditionals} = Header,
+  <<ID:16/big,
+    Flags:16/big,
+    NQuestions:16/big,
+    NAnswers:16/big,
+    NAuthorities:16/big,
+    NAdditionals:16/big>>.
 
 -spec question_to_bytes(string(), record_type(), class()) -> iolist().
 question_to_bytes(Name, RecordType, Class) ->
-    EncodedName = encode_dns_name(Name),
-    RecordTypeInt = record_type_to_number(RecordType),
-    ClassInt = class_to_number(Class),
-    [EncodedName, <<RecordTypeInt:16/big, ClassInt:16/big>>].
+  EncodedName = encode_dns_name(Name),
+  RecordTypeInt = record_type_to_number(RecordType),
+  ClassInt = class_to_number(Class),
+  [EncodedName, <<RecordTypeInt:16/big, ClassInt:16/big>>].
 
 -spec encode_dns_name(string()) -> iolist().
 encode_dns_name(Name) ->
-    [[[Length, Label] || {Length, Label} <- labels(Name)], 0].
+  [[[Length, Label] || {Length, Label} <- labels(Name)], 0].
 
 -type label_length() :: 0..63.
 -type label() :: {label_length(), string()}.
 -spec labels(string()) -> [label()].
 labels(Name) ->
-    labels(reverse(Name), [], 0, []).
+  labels(reverse(Name), [], 0, []).
 
 %% labels/4 parses from the end of the string to the beginning.
 %%
@@ -173,22 +173,22 @@ labels([Char|Rest], Current, Length, Acc) when Length < 63 ->
 %% Parsing/Deserialization %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 parse_dns_packet(Datagram) ->
-    <<ID:16/big,
-      Flags:16/big,
-      NQuestions:16/big,
-      NAnswers:16/big,
-      NAuthorities:16/big,
-      NAdditionals:16/big,
-      R0/binary>> = Datagram,
-    Props = flags_to_proplist(Flags),
-    Header = #dns_header{id=ID, flags=Props, n_questions=NQuestions,
-                         n_answers=NAnswers, n_authorities=NAuthorities,
-                         n_additionals=NAdditionals},
-    {Questions, R1} = parse_questions(R0, NQuestions, Datagram),
-    {Answers, R2} = parse_records(R1, NAnswers, Datagram),
-    {Authorities, R3} = parse_records(R2, NAuthorities, Datagram),
-    {Additionals, <<>>} = parse_records(R3, NAdditionals, Datagram),
-    {Header, Questions, Answers, Authorities, Additionals}.
+  <<ID:16/big,
+    Flags:16/big,
+    NQuestions:16/big,
+    NAnswers:16/big,
+    NAuthorities:16/big,
+    NAdditionals:16/big,
+    R0/binary>> = Datagram,
+  Props = flags_to_proplist(Flags),
+  Header = #dns_header{id=ID, flags=Props, n_questions=NQuestions,
+                       n_answers=NAnswers, n_authorities=NAuthorities,
+                       n_additionals=NAdditionals},
+  {Questions, R1} = parse_questions(R0, NQuestions, Datagram),
+  {Answers, R2} = parse_records(R1, NAnswers, Datagram),
+  {Authorities, R3} = parse_records(R2, NAuthorities, Datagram),
+  {Additionals, <<>>} = parse_records(R3, NAdditionals, Datagram),
+  {Header, Questions, Answers, Authorities, Additionals}.
 
 
 flags_to_proplist(Flags) when is_number(Flags) ->
@@ -225,37 +225,37 @@ number_to_response_code(_) -> unknown.
 
 
 parse_questions(Bytes, N, Datagram) ->
-    parse_questions(Bytes, N, Datagram, []).
+  parse_questions(Bytes, N, Datagram, []).
 
 parse_questions(Bytes, 0, _, Questions) ->
-    {reverse(Questions), Bytes};
+  {reverse(Questions), Bytes};
 parse_questions(Bytes, N, Datagram, Acc) ->
-    {Name, Rest} = decode_name(Bytes, Datagram),
-    <<Type:16/big, Class:16/big, Remainder/binary>> = Rest,
-    Current = #dns_question{name = Name,
-                            type = number_to_record_type(Type),
-                            class = number_to_class(Class)},
-    parse_questions(Remainder, N - 1, Datagram, [Current|Acc]).
+  {Name, Rest} = decode_name(Bytes, Datagram),
+  <<Type:16/big, Class:16/big, Remainder/binary>> = Rest,
+  Current = #dns_question{name = Name,
+                          type = number_to_record_type(Type),
+                          class = number_to_class(Class)},
+  parse_questions(Remainder, N - 1, Datagram, [Current|Acc]).
 
 
 -spec parse_records(binary(), non_neg_integer(), binary()) -> {[#dns_record{}], binary()}.
 parse_records(Bytes, N, Datagram) ->
-    parse_records(Bytes, N, Datagram, []).
+  parse_records(Bytes, N, Datagram, []).
 
 parse_records(Bytes, 0, _Datagram, Records) ->
-    {reverse(Records), Bytes};
+  {reverse(Records), Bytes};
 parse_records(Bytes, N, Datagram, Acc) ->
-    {Name, Rest} = decode_name(Bytes, Datagram),
-    <<Type:16/big, Class:16/big, TTL:32/big, DataLen:16/big, PossiblyData/binary>> = Rest,
-    <<Data:DataLen/binary, Remainder/binary>> = PossiblyData,
-    RecordType = number_to_record_type(Type),
-    ParsedData = parse_record_data(RecordType, Data, Datagram),
-    Current = #dns_record{name = Name,
-                          type = RecordType,
-                          class = number_to_class(Class),
-                          ttl = TTL,
-                          data = ParsedData},
-    parse_records(Remainder, N - 1, Datagram, [Current|Acc]).
+  {Name, Rest} = decode_name(Bytes, Datagram),
+  <<Type:16/big, Class:16/big, TTL:32/big, DataLen:16/big, PossiblyData/binary>> = Rest,
+  <<Data:DataLen/binary, Remainder/binary>> = PossiblyData,
+  RecordType = number_to_record_type(Type),
+  ParsedData = parse_record_data(RecordType, Data, Datagram),
+  Current = #dns_record{name = Name,
+                        type = RecordType,
+                        class = number_to_class(Class),
+                        ttl = TTL,
+                        data = ParsedData},
+  parse_records(Remainder, N - 1, Datagram, [Current|Acc]).
 
 
 parse_record_data(a, <<A, B, C, D>>, _) ->
@@ -324,7 +324,7 @@ number_to_class(4) -> hs.
 
 -spec random_id() -> u16().
 random_id() ->
-    rand:uniform(65536) - 1.
+  rand:uniform(65536) - 1.
 
 % Run
 %   !./get-resolvers.sh -e
