@@ -1,5 +1,5 @@
 %%% @doc resolver - a DNS resolver.
--module(resolver).
+-module(dns_resolver).
 
 -export([send_query/2, send_query/3, send_query/4]).
 -import(lists, [reverse/1]).
