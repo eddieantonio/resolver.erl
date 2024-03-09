@@ -14,16 +14,8 @@
 %% A label is the thing between the dots of a domain name.
 %% Did you know that they're limited to a maximum of 63 characters?
 
-%% DNS header, for serialization to the wire.
--record(dns_header_out, {id :: u16(),
-                         flags = 0 :: u16(),
-                         n_questions = 0 :: u16(),
-                         n_answers = 0 :: u16(),
-                         n_authorities = 0 :: u16(),
-                         n_additionals = 0 :: u16()}).
 
-
-%% Exports %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Public API %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -spec build(DomainName :: string(), RecordType:: dns:record_type()) -> iodata().
 %% @doc Build a DNS query to request records of the given type using a
@@ -40,9 +32,7 @@ build(DomainName, RecordType) ->
 %% any resolvers.
 build(ID, DomainName, RecordType) ->
   Flags = proplist_to_flags([recursion_desired]),
-  Header = header_to_bytes(#dns_header_out{id = ID,
-                                           flags = Flags,
-                                           n_questions = 1}),
+  Header = header_to_bytes(ID, Flags),
   Question = question_to_bytes(DomainName, RecordType, in),
   [Header, Question].
 
@@ -65,20 +55,16 @@ proplist_to_flags([], {RD}) ->
 proplist_to_flags([recursion_desired|Rest], {_}) ->
   proplist_to_flags(Rest, {1}).
 
--spec header_to_bytes(#dns_header_out{}) -> <<_:96>>.
-header_to_bytes(Header) ->
-  #dns_header_out{id = ID,
-                  flags = Flags,
-                  n_questions = NQuestions,
-                  n_answers = NAnswers,
-                  n_authorities = NAuthorities,
-                  n_additionals = NAdditionals} = Header,
+-spec header_to_bytes(ID :: u16(), Flags :: u16()) -> <<_:96>>.
+%% Creates a header for one question.
+header_to_bytes(ID, Flags) ->
   <<ID:16/big,
     Flags:16/big,
-    NQuestions:16/big,
-    NAnswers:16/big,
-    NAuthorities:16/big,
-    NAdditionals:16/big>>.
+    1:16/big, % 1 question
+    0:16/big, % 0 anwers
+    0:16/big, % 0 authorities
+    0:16/big  % 0 additionals
+  >>.
 
 -spec question_to_bytes(string(), dns:record_type(), dns:class()) -> iolist().
 question_to_bytes(Name, RecordType, Class) ->
