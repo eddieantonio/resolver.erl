@@ -2,7 +2,7 @@
 %%
 -module(resolver).
 -export([send_query/2, send_query/3]).
-
+-import(lists, [reverse/1]).
 
 %% Types %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -101,7 +101,7 @@ encode_dns_name(Name) ->
 -type label() :: {label_length(), string()}.
 -spec labels(string()) -> [label()].
 labels(Name) ->
-    labels(lists:reverse(Name), [], 0, []).
+    labels(reverse(Name), [], 0, []).
 
 %% labels/4 parses from the end of the string to the beginning.
 %%
@@ -162,7 +162,7 @@ parse_questions(Bytes, N, Datagram) ->
     parse_questions(Bytes, N, Datagram, []).
 
 parse_questions(Bytes, 0, _, Questions) ->
-    {Questions, Bytes};
+    {reverse(Questions), Bytes};
 parse_questions(Bytes, N, Datagram, Acc) ->
     {Name, Rest} = decode_name(Bytes, Datagram),
     <<Type:16/big, Class:16/big, Remainder/binary>> = Rest,
@@ -175,8 +175,9 @@ parse_questions(Bytes, N, Datagram, Acc) ->
 -spec parse_records(binary(), non_neg_integer(), binary()) -> {[#dns_record{}], binary()}.
 parse_records(Bytes, N, Datagram) ->
     parse_records(Bytes, N, Datagram, []).
+
 parse_records(Bytes, 0, _Datagram, Records) ->
-    {Records, Bytes};
+    {reverse(Records), Bytes};
 parse_records(Bytes, N, Datagram, Acc) ->
     {Name, Rest} = decode_name(Bytes, Datagram),
     <<Type:16/big, Class:16/big, TTL:32/big, DataLen:16/big, PossiblyData/binary>> = Rest,
@@ -206,7 +207,7 @@ decode_name_discard_data(Data, Packet) ->
 
 decode_name(Bytes, Datagram) ->
   {ReversedLabels, Rest} = decode_name(Bytes, Datagram, []),
-  Labels = [binary_to_list(Label) || Label <- lists:reverse(ReversedLabels)],
+  Labels = [binary_to_list(Label) || Label <- reverse(ReversedLabels)],
   Name = lists:flatten(lists:join(".", Labels)),
   {Name, Rest}.
 
