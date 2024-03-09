@@ -1,6 +1,7 @@
-%% resolver - DNS resolver.
+%%% @doc resolver - a DNS resolver.
 -module(resolver).
--export([send_query/2, send_query/3]).
+
+-export([send_query/2, send_query/3, send_query/4]).
 -import(lists, [reverse/1]).
 
 %% Types %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -8,7 +9,7 @@
 -type u16() :: 0..65535.
 -type u32() :: 0..4294967296.
 
--type record_type() :: a | aaaa | cname | ns | soa.
+-type record_type() :: a | aaaa | cname | ns | soa.  %% DNS record type.
 -type class() :: in | cs | ch | hs.
 -type dns_flag() :: query
                   | response
@@ -26,6 +27,12 @@
                        | name_error
                        | not_implemented
                        | refused.
+
+-type label_length() :: 1..63. %% Length of a DNS label.
+%% A label is an individual components in between the dots of a domain name.
+%% Did you know they're limited to a maximum of 63 characters?
+
+-type label() :: {label_length(), string()}.
 
 %% DNS header, for serialization to the wire.
 -record(dns_header_out, {id :: u16(),
@@ -59,18 +66,30 @@
 
 %% Public API %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%% Send a DNS query to the current DNS resolver.
-%% Same as send_query/2 with the current DNS resolver.
 -spec send_query(DomainName :: string(), Type :: record_type()) -> any().
+%% @doc Send a DNS query to the current DNS resolver.
+%%
+%% Same as send_query/3 with the current DNS resolver.
 send_query(DomainName, RecordType) ->
   send_query(current_resolver(), DomainName, RecordType).
 
-%% Send a DNS query to the DNS resolver at the given query.
 -spec send_query(inet:ip4_address(), string(), record_type()) -> any().
+%% @doc Send a query to the given DNS resolver at the default port.
+%%
+%% Same as send_query/4 with port 53 (default DNS port).
 send_query(IPAddress, DomainName, RecordType) ->
+  send_query(IPAddress, 53, DomainName, RecordType).
+
+-spec send_query(inet:ip4_address(), u16(), string(), record_type()) -> any().
+%% @doc Send a DNS query to the given address and port.
+%%
+%% Builds a question for the given domain name and record type,
+%% and sends it to the DNS resolver with the given IP address and port.
+%% Returns a parsed representation of the resolver's response.
+send_query(IPAddress, Port, DomainName, RecordType) ->
   Query = build_query(DomainName, RecordType),
   {ok, Socket} = gen_udp:open(0, [inet, binary, {active, false}]),
-  ok = gen_udp:send(Socket, IPAddress, 53, Query),
+  ok = gen_udp:send(Socket, IPAddress, Port, Query),
   Reply = catch gen_udp:recv(Socket, 1024, 30 * 1000),
   gen_udp:close(Socket),
   case Reply of
@@ -129,8 +148,6 @@ question_to_bytes(Name, RecordType, Class) ->
 encode_dns_name(Name) ->
   [[[Length, Label] || {Length, Label} <- labels(Name)], 0].
 
--type label_length() :: 0..63.
--type label() :: {label_length(), string()}.
 -spec labels(string()) -> [label()].
 labels(Name) ->
   labels(reverse(Name), [], 0, []).
@@ -151,7 +168,7 @@ labels(Name) ->
 %%
 -spec labels(Reversed :: string(),
              Current :: string(),
-             Length :: label_length(),
+             Length :: 0 | label_length(),
              Acc :: [label()]) -> [label()].
 labels([], [], 0, Acc) ->
     % Edge case: Reached the end, but no current label.
@@ -283,14 +300,17 @@ decode_name(Bytes, Datagram) ->
 decode_name(<<0, Rest/binary>>, _Datagram, Labels)  ->
   {Labels, Rest};
 decode_name(<<2#11:2, Offset:14, Rest/binary>>, Datagram, Labels) ->
-  EarlierChunk = binary_part_til_end(Datagram, Offset),
+  EarlierChunk = binary_part_until_end(Datagram, Offset),
   {NewLabels, _} = decode_name(EarlierChunk, Datagram, Labels),
   {NewLabels, Rest};
 decode_name(<<Length, Data/binary>>, Datagram, Labels) when Length =< 63 ->
   <<Label:Length/binary, Rest/binary>> = Data,
   decode_name(Rest, Datagram, [Label|Labels]).
 
-binary_part_til_end(Binary, Offset) ->
+%% @doc Returns a suffix of the the binary, starting at the given offset.
+%%
+%% Equivalent to the Python expression <code>binary[offset:]</code>.
+binary_part_until_end(Binary, Offset) ->
   Length = max(0, byte_size(Binary) - Offset),
   binary_part(Binary, {Offset, Length}).
 
