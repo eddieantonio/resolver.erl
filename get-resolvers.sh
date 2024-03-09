@@ -3,7 +3,7 @@
 erlang=false
 while [ $# -gt 0 ]; do
     case "$1" in
-        -e|--erl)
+        -e|--erlang)
             erlang=true
             ;;
         *)
