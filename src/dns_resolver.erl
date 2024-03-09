@@ -7,25 +7,24 @@
 %% Types %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -type u16() :: 0..65535.
--type record_type() :: a | aaaa | cname | ns | soa.  %% DNS record type.
 
 %% Public API %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec send_query(DomainName :: string(), Type :: record_type()) -> any().
+-spec send_query(DomainName :: string(), Type :: dns:record_type()) -> any().
 %% @doc Send a DNS query to the current DNS resolver.
 %%
 %% Same as send_query/3 with the current DNS resolver.
 send_query(DomainName, RecordType) ->
   send_query(current_resolver(), DomainName, RecordType).
 
--spec send_query(inet:ip4_address(), string(), record_type()) -> any().
+-spec send_query(inet:ip4_address(), string(), dns:record_type()) -> any().
 %% @doc Send a query to the given DNS resolver at the default port.
 %%
 %% Same as send_query/4 with port 53 (default DNS port).
 send_query(IPAddress, DomainName, RecordType) ->
   send_query(IPAddress, 53, DomainName, RecordType).
 
--spec send_query(inet:ip4_address(), u16(), string(), record_type()) -> dns_parse:dns_packet().
+-spec send_query(inet:ip4_address(), u16(), string(), dns:record_type()) -> dns_parse:dns_packet().
 %% @doc Send a DNS query to the given address and port.
 %%
 %% Builds a question for the given domain name and record type,

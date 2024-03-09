@@ -4,6 +4,8 @@
 -export([from_etc/0]).
 
 
+%% Public API %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 -spec from_etc() -> [inet:ip4_address()].
 %% @doc Returns the IP addresses of any resolvers found in /etc/resolv.conf
 %%
@@ -13,6 +15,9 @@ from_etc() ->
     Lines = lines(File),
     ok = file:close(File),
     parse_resolve_conf(Lines).
+
+
+%% Internal %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 parse_resolve_conf(Lines) ->
     [parse_nameserver(Line) || Line <- Lines, starts_with_nameserver(Line)].

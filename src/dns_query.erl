@@ -8,30 +8,11 @@
 
 -type u16() :: 0..65535.
 
--type record_type() :: a | aaaa | cname | ns | soa.  %% DNS record type.
--type class() :: in | cs | ch | hs.
--type dns_flag() :: query
-                  | response
-                  | opcode()
-                  | authoritative_answer
-                  | truncation
-                  | recursion_desired
-                  | recursion_available
-                  | {error, response_code() | unknown}.
-
--type opcode() :: standard_query | inverse_query | status_request.
-
--type response_code() :: format_error
-                       | server_failure
-                       | name_error
-                       | not_implemented
-                       | refused.
+-type label() :: {label_length(), string()}.
 
 -type label_length() :: 1..63. %% Length of a DNS label.
 %% A label is the thing between the dots of a domain name.
 %% Did you know that they're limited to a maximum of 63 characters?
-
--type label() :: {label_length(), string()}.
 
 %% DNS header, for serialization to the wire.
 -record(dns_header_out, {id :: u16(),
@@ -44,7 +25,7 @@
 
 %% Exports %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec build(DomainName :: string(), RecordType:: record_type()) -> iodata().
+-spec build(DomainName :: string(), RecordType:: dns:record_type()) -> iodata().
 %% @doc Build a DNS query to request records of the given type using a
 %% random ID.
 %%
@@ -52,7 +33,7 @@
 build(DomainName, RecordType) ->
   build(random_id(), DomainName, RecordType).
 
--spec build(ID :: u16(), DomainName :: string(), RecordType :: record_type()) -> iodata().
+-spec build(ID :: u16(), DomainName :: string(), RecordType :: dns:record_type()) -> iodata().
 %% @doc Build a DNS query to request records of the given type with the given ID.
 %%
 %% This function only builds the query; it does not actually send a query to
@@ -73,7 +54,7 @@ random_id() ->
 
 %% Internal %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec proplist_to_flags([dns_flag()]) -> u16().
+-spec proplist_to_flags([dns:flag()]) -> u16().
 proplist_to_flags(List) ->
   proplist_to_flags(List, {0}).
 
@@ -99,7 +80,7 @@ header_to_bytes(Header) ->
     NAuthorities:16/big,
     NAdditionals:16/big>>.
 
--spec question_to_bytes(string(), record_type(), class()) -> iolist().
+-spec question_to_bytes(string(), dns:record_type(), dns:class()) -> iolist().
 question_to_bytes(Name, RecordType, Class) ->
   EncodedName = encode_dns_name(Name),
   RecordTypeInt = record_type_to_number(RecordType),
@@ -151,11 +132,11 @@ labels([Char|Rest], Current, Length, Acc) when Length < 63 ->
 
 %% DNS data %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec record_type_to_number(record_type()) -> u16().
+-spec record_type_to_number(dns:record_type()) -> u16().
 record_type_to_number(a) -> 1;
 record_type_to_number(ns) -> 2;
 record_type_to_number(cname) -> 5.
 
 % These functions are sort of pointless.
--spec class_to_number(class()) -> u16().
+-spec class_to_number(dns:class()) -> u16().
 class_to_number(in) -> 1.

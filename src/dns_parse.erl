@@ -10,39 +10,20 @@
 -type u16() :: 0..65535.
 -type u32() :: 0..4294967296.
 
--type record_type() :: a | aaaa | cname | ns | soa.  %% DNS record type.
--type class() :: in | cs | ch | hs.
--type dns_flag() :: query
-                  | response
-                  | opcode()
-                  | authoritative_answer
-                  | truncation
-                  | recursion_desired
-                  | recursion_available
-                  | {error, response_code() | unknown}.
-
--type opcode() :: standard_query | inverse_query | status_request.
-
--type response_code() :: format_error
-                       | server_failure
-                       | name_error
-                       | not_implemented
-                       | refused.
-
 -record(dns_question, {name :: string(),
-                       type :: record_type(),
-                       class :: class()}).  %% DNS question, for use within Erlang.
+                       type :: dns:record_type(),
+                       class :: dns:class()}).  %% DNS question, for use within Erlang.
 
 -record(dns_record, {name :: string(),
-                     type :: record_type(),
-                     class :: class(),
+                     type :: dns:record_type(),
+                     class :: dns:class(),
                      ttl :: u32(),
                      % Data depends on the record type.
                      data :: any()}).  %% DNS record, for use within Erlang.
 
 
 -type dns_packet() :: #{id => u16(),
-                        flags => [dns_flag()],
+                        flags => [dns:flag()],
                         questions => [#dns_question{}],
                         answers => [#dns_record{}],
                         authorities => [#dns_record{}],
@@ -183,14 +164,14 @@ binary_part_until_end(Binary, Offset) ->
   Length = max(0, byte_size(Binary) - Offset),
   binary_part(Binary, {Offset, Length}).
 
--spec number_to_record_type(u16()) -> record_type().
+-spec number_to_record_type(u16()) -> dns:record_type().
 number_to_record_type(1) -> a;
 number_to_record_type(2) -> ns;
 number_to_record_type(5) -> cname;
 number_to_record_type(6) -> soa;
 number_to_record_type(28) -> aaaa.
 
--spec number_to_class(u16()) -> class().
+-spec number_to_class(u16()) -> dns:class().
 number_to_class(1) -> in;
 number_to_class(2) -> cs;
 number_to_class(3) -> ch;
