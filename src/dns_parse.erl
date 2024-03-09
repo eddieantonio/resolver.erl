@@ -2,6 +2,7 @@
 -module(dns_parse).
 
 -export([packet/1]).
+-export_type([dns_packet/0]).
 
 
 %% Types %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

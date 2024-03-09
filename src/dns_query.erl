@@ -28,8 +28,8 @@
                        | refused.
 
 -type label_length() :: 1..63. %% Length of a DNS label.
-%% A label is an individual components in between the dots of a domain name.
-%% Did you know they're limited to a maximum of 63 characters?
+%% A label is the thing between the dots of a domain name.
+%% Did you know that they're limited to a maximum of 63 characters?
 
 -type label() :: {label_length(), string()}.
 
@@ -44,11 +44,19 @@
 
 %% Exports %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec build(string(), record_type()) -> iolist().
+-spec build(DomainName :: string(), RecordType:: record_type()) -> iodata().
+%% @doc Build a DNS query to request records of the given type using a
+%% random ID.
+%%
+%% Same as {@link build/2. <code>build(dns_query:random_id(), DomainName, RecordType)</code>}.
 build(DomainName, RecordType) ->
   build(random_id(), DomainName, RecordType).
 
--spec build(u16(), string(), record_type()) -> iolist().
+-spec build(ID :: u16(), DomainName :: string(), RecordType :: record_type()) -> iodata().
+%% @doc Build a DNS query to request records of the given type with the given ID.
+%%
+%% This function only builds the query; it does not actually send a query to
+%% any resolvers.
 build(ID, DomainName, RecordType) ->
   Flags = proplist_to_flags([recursion_desired]),
   Header = header_to_bytes(#dns_header_out{id = ID,
@@ -56,6 +64,14 @@ build(ID, DomainName, RecordType) ->
                                            n_questions = 1}),
   Question = question_to_bytes(DomainName, RecordType, in),
   [Header, Question].
+
+-spec random_id() -> u16().
+%% @doc Return an random ID, suitable for a DNS query.
+random_id() ->
+  rand:uniform(65536) - 1.
+
+
+%% Internal %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -spec proplist_to_flags([dns_flag()]) -> u16().
 proplist_to_flags(List) ->
@@ -143,10 +159,3 @@ record_type_to_number(cname) -> 5.
 % These functions are sort of pointless.
 -spec class_to_number(class()) -> u16().
 class_to_number(in) -> 1.
-
-%% Utilities %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--spec random_id() -> u16().
-%% @doc Return an random ID, suitable for a DNS query.
-random_id() ->
-  rand:uniform(65536) - 1.
