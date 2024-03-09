@@ -1,5 +1,4 @@
 %% resolver - DNS resolver.
-%%
 -module(resolver).
 -export([send_query/2, send_query/3]).
 -import(lists, [reverse/1]).
@@ -9,12 +8,36 @@
 -type u16() :: 0..65535.
 -type u32() :: 0..4294967296.
 
--type record_type() :: a | aaaa | cname | ns.
+-type record_type() :: a | aaaa | cname | ns | soa.
 -type class() :: in | cs | ch | hs.
+-type dns_flag() :: query
+                  | response
+                  | opcode()
+                  | authoritative_answer
+                  | truncation
+                  | recursion_desired
+                  | recursion_available
+                  | {error, response_code() | unknown}.
 
-%% DNS header, for serialization and deserialization.
+-type opcode() :: standard_query | inverse_query | status_request.
+
+-type response_code() :: format_error
+                       | server_failure
+                       | name_error
+                       | not_implemented
+                       | refused.
+
+%% DNS header, for serialization to the wire.
+-record(dns_header_out, {id :: u16(),
+                         flags = 0 :: u16(),
+                         n_questions = 0 :: u16(),
+                         n_answers = 0 :: u16(),
+                         n_authorities = 0 :: u16(),
+                         n_additionals = 0 :: u16()}).
+
+%% DNS header, for use within Erlang.
 -record(dns_header, {id :: u16(),
-                     flags = 0 :: u16(),
+                     flags = 0 :: [dns_flag()],
                      n_questions = 0 :: u16(),
                      n_answers = 0 :: u16(),
                      n_authorities = 0 :: u16(),
@@ -58,25 +81,36 @@ send_query(IPAddress, DomainName, RecordType) ->
 
 %% Serialization %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% Flags:
--define(RECURSION_DESIRED, 1 bsl 8).
 
 -spec build_query(string(), record_type()) -> iolist().
 build_query(DomainName, RecordType) ->
     ID = random_id(),
-    Header = header_to_bytes(#dns_header{id = ID,
-                                         flags = ?RECURSION_DESIRED,
-                                         n_questions = 1}),
+    Flags = proplist_to_flags([recursion_desired]),
+    Header = header_to_bytes(#dns_header_out{id = ID,
+                                             flags = Flags,
+                                             n_questions = 1}),
     Question = question_to_bytes(DomainName, RecordType, in),
     [Header, Question].
 
--spec header_to_bytes(#dns_header{}) -> <<_:96>>.
-header_to_bytes(#dns_header{id = ID,
-                            flags = Flags,
-                            n_questions = NQuestions,
-                            n_answers = NAnswers,
-                            n_authorities = NAuthorities,
-                            n_additionals = NAdditionals}) ->
+-spec proplist_to_flags([dns_flag()]) -> u16().
+proplist_to_flags(List) ->
+    proplist_to_flags(List, {0}).
+
+proplist_to_flags([], {RD}) ->
+    <<Flags:16/big>> =
+      % QR   Op   AA   TC   RD    RA   Z    Rcode
+      <<0:1, 0:4, 0:1, 0:1, RD:1, 0:1, 0:3, 0:4>>,
+    Flags;
+proplist_to_flags([recursion_desired|Rest], {_}) ->
+    proplist_to_flags(Rest, {1}).
+
+-spec header_to_bytes(#dns_header_out{}) -> <<_:96>>.
+header_to_bytes(#dns_header_out{id = ID,
+                                flags = Flags,
+                                n_questions = NQuestions,
+                                n_answers = NAnswers,
+                                n_authorities = NAuthorities,
+                                n_additionals = NAdditionals}) ->
     <<ID:16/big,
       Flags:16/big,
       NQuestions:16/big,
@@ -89,9 +123,7 @@ question_to_bytes(Name, RecordType, Class) ->
     EncodedName = encode_dns_name(Name),
     RecordTypeInt = record_type_to_number(RecordType),
     ClassInt = class_to_number(Class),
-    [EncodedName,
-      <<RecordTypeInt:16/big,
-        ClassInt:16/big>>].
+    [EncodedName, <<RecordTypeInt:16/big, ClassInt:16/big>>].
 
 -spec encode_dns_name(string()) -> iolist().
 encode_dns_name(Name) ->
@@ -148,7 +180,8 @@ parse_dns_packet(Datagram) ->
       NAuthorities:16/big,
       NAdditionals:16/big,
       R0/binary>> = Datagram,
-    Header = #dns_header{id=ID, flags=Flags, n_questions=NQuestions,
+    Props = flags_to_proplist(Flags),
+    Header = #dns_header{id=ID, flags=Props, n_questions=NQuestions,
                          n_answers=NAnswers, n_authorities=NAuthorities,
                          n_additionals=NAdditionals},
     {Questions, R1} = parse_questions(R0, NQuestions, Datagram),
@@ -156,6 +189,39 @@ parse_dns_packet(Datagram) ->
     {Authorities, R3} = parse_records(R2, NAuthorities, Datagram),
     {Additionals, <<>>} = parse_records(R3, NAdditionals, Datagram),
     {Header, Questions, Answers, Authorities, Additionals}.
+
+
+flags_to_proplist(Flags) when is_number(Flags) ->
+    flags_to_proplist(<<Flags:16/big>>);
+flags_to_proplist(<<QR:1, Opcode:4, AA:1, TC:1, RD:1, RA:1, 0:3, RCode:4>>) ->
+    [case QR of
+         0 -> query;
+         1 -> response
+     end,
+     case Opcode of
+         0 -> standard_query;
+         1 -> inverse_query;
+         2 -> server_status;
+         _ -> unknown_opcode
+     end]
+    ++ prop_if_nonzero(AA, authoritative_answer)
+    ++ prop_if_nonzero(TC, truncation)
+    ++ prop_if_nonzero(RD, recursion_desired)
+    ++ prop_if_nonzero(RA, recursion_available)
+    ++ error_if_nonzero(RCode).
+
+prop_if_nonzero(0, _) -> [];
+prop_if_nonzero(1, Prop) -> [Prop].
+
+error_if_nonzero(0) -> [];
+error_if_nonzero(N) -> [{error, number_to_response_code(N)}].
+
+number_to_response_code(1) -> format_error;
+number_to_response_code(2) -> server_failure;
+number_to_response_code(3) -> name_error;
+number_to_response_code(4) -> not_implemented;
+number_to_response_code(5) -> refused;
+number_to_response_code(_) -> unknown.
 
 
 parse_questions(Bytes, N, Datagram) ->
@@ -199,7 +265,10 @@ parse_record_data(ns, Data, Packet) ->
 parse_record_data(cname, Data, Packet) ->
   decode_name_discard_data(Data, Packet);
 parse_record_data(aaaa, <<A:16/big, B:16/big, C:16/big, D:16/big, E:16/big, F:16/big, G:16/big, H:16/big >>, _) ->
-  {A, B, C, D, E, F, G, H}.
+  {A, B, C, D, E, F, G, H};
+parse_record_data(_, Binary, _) ->
+  {not_parsed, Binary}.
+
 
 decode_name_discard_data(Data, Packet) ->
   {Name, _} = decode_name(Data, Packet),
@@ -237,6 +306,7 @@ record_type_to_number(cname) -> 5.
 number_to_record_type(1) -> a;
 number_to_record_type(2) -> ns;
 number_to_record_type(5) -> cname;
+number_to_record_type(6) -> soa;
 number_to_record_type(28) -> aaaa.
 
 % These functions are sort of pointless.
