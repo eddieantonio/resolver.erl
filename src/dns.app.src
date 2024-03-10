@@ -1,13 +1,13 @@
 {application, dns,
  [{description, "A DNS resolver"},
   {vsn, "0.1.0"},
-  {registered, []},
+  {registered, [dns_server]},
   {mod, {dns_app, []}},
   {applications,
    [kernel,
     stdlib
    ]},
-  {env,[]},
+  {env,[{port, 9001}]},
   {modules, []},
 
   {licenses, ["Apache-2.0"]},

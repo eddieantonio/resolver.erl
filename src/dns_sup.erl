@@ -1,5 +1,6 @@
 %%%-------------------------------------------------------------------
 %% @doc dns top level supervisor.
+%% Starts the DNS server on the configured port.
 %% @end
 %%%-------------------------------------------------------------------
 
@@ -14,7 +15,12 @@
 -define(SERVER, ?MODULE).
 
 start_link() ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+    % Figure out the port.
+    Port = case application:get_env(port) of
+               {ok, P} -> P;
+               undefined -> 9001
+           end,
+    supervisor:start_link({local, ?SERVER}, ?MODULE, [Port]).
 
 %% sup_flags() = #{strategy => strategy(),         % optional
 %%                 intensity => non_neg_integer(), % optional
@@ -25,12 +31,12 @@ start_link() ->
 %%                  shutdown => shutdown(), % optional
 %%                  type => worker(),       % optional
 %%                  modules => modules()}   % optional
-init([]) ->
+init([Port]) ->
     SupFlags = #{strategy => one_for_all,
                  intensity => 1,
                  period => 1},
     ChildSpecs = [#{id => dns_server,
-                    start => {dns_server, start_link, []},
+                    start => {dns_server, start_link, [Port]},
                     restart => permanent}],
     {ok, {SupFlags, ChildSpecs}}.
 

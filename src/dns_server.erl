@@ -1,7 +1,7 @@
 -module(dns_server).
 -behaviour(gen_server).
 
--export([start_link/0]).
+-export([start_link/1]).
 -export([resolve/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
@@ -10,8 +10,8 @@
 
 % Init %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-start_link() ->
-  gen_server:start_link({local, ?NAME}, ?MODULE, [], [{debug, [trace]}]).
+start_link(Port) ->
+  gen_server:start_link({local, ?NAME}, ?MODULE, [Port], [{debug, [trace]}]).
 
 
 % Public API %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -25,9 +25,8 @@ resolve(DomainName) ->
 
 % gen_server callbacks %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-init(_) ->
+init([Port]) ->
   IP = {127,0,0,1},
-  Port = 42069,
   {ok, Socket} = gen_udp:open(Port, [binary, {ip, IP}, {active, true}]),
   io:format("~p listening on ~w:~p~n", [?NAME, IP, Port]),
   {ok, #state{socket=Socket}}.
