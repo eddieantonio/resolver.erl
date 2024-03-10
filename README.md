@@ -1,14 +1,20 @@
 dns
 ===
 
-An OTP DNS resolver.
-
-At the moment, just creates DNS queries.
+A toy OTP DNS server.
 
 Build
 -----
 
     $ rebar3 compile
+
+Run
+---
+
+I haven't really figured that part out yet. But you can start the shell,
+and it will tell you what port it's listening to...
+
+    $ rebar3 shell
 
 License
 -------
