@@ -2,7 +2,6 @@
 -behaviour(gen_server).
 
 -export([start_link/1]).
--export([resolve/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 -define(NAME, ?MODULE).
@@ -14,15 +13,6 @@ start_link(Port) ->
   gen_server:start_link({local, ?NAME}, ?MODULE, [Port], [{debug, [trace]}]).
 
 
-% Public API %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--spec resolve(DomainName :: string()) -> {ok, [inet:ip4_address()]}
-                                       | {error, nxdomain}.
-%% @doc Resolve a domain name to one or more IPv4 addresses.
-resolve(DomainName) ->
-  gen_server:call(?NAME, {resolve, DomainName}).
-
-
 % gen_server callbacks %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init([Port]) ->
@@ -31,8 +21,8 @@ init([Port]) ->
   io:format("~p listening on ~w:~p~n", [?NAME, IP, Port]),
   {ok, #state{socket=Socket}}.
 
-handle_call({resolve, Name}, _From, State) ->
-  {reply, resolve_internal(Name), State}.
+handle_call(_Message, _From, State) ->
+  {noreply, State}.
 
 handle_cast(_, State) ->
   {noreply, State}.
@@ -43,7 +33,7 @@ handle_info({udp, Socket, Host, Port, Datagram}, State) ->
   io:format("Got message: ~w:~w: ~p~n", [Host, Port, Packet]),
   #{id := ID, questions := [Question|_]} = Packet,
   Name = get_name(Question),
-  {ok, Addresses} = resolve_internal(Name),
+  {ok, Addresses} = resolve(Name),
   Answers = [{dns_record, Name, a, in, 3600, A} || A <- Addresses],
   Response = dns_query:build_response(ID, [Question], Answers),
   ok = gen_udp:send(Socket, Host, Port, Response),
@@ -56,7 +46,7 @@ terminate(_, #state{socket=Socket}) ->
 
 % Internal %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-resolve_internal(Name) ->
+resolve(Name) ->
   {ok, #{answers := Answers}} = dns_resolver:send_query(Name, a),
   case addresses(Answers) of
     [] -> {error, nxdomain};
