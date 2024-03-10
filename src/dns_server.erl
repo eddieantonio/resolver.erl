@@ -18,7 +18,7 @@ start_link(Port) ->
 init([Port]) ->
   IP = {127,0,0,1},
   {ok, Socket} = gen_udp:open(Port, [binary, {ip, IP}, {active, true}]),
-  io:format("~p listening on ~w:~p~n", [?NAME, IP, Port]),
+  io:format("[~p] Listening on ~w:~p~n", [?NAME, IP, Port]),
   {ok, #state{socket=Socket}}.
 
 handle_call(_Message, _From, State) ->
@@ -30,7 +30,6 @@ handle_cast(_, State) ->
 % DNS Query.
 handle_info({udp, Socket, Host, Port, Datagram}, State) ->
   Packet = dns_parse:packet(Datagram),
-  io:format("Got message: ~w:~w: ~p~n", [Host, Port, Packet]),
   #{id := ID, questions := [Question|_]} = Packet,
   Name = get_name(Question),
   {ok, Addresses} = resolve(Name),
@@ -40,7 +39,6 @@ handle_info({udp, Socket, Host, Port, Datagram}, State) ->
   {noreply, State}.
 
 terminate(_, #state{socket=Socket}) ->
-  io:format("Closing the socket...~n"),
   ok = gen_udp:close(Socket),
   ok.
 
