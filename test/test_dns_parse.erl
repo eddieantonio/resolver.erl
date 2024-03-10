@@ -34,3 +34,12 @@ non_resursive_test() ->
                                {dns_record,"example.com",ns,in,12146,"a.iana-servers.net"}],
                additionals => []},
   Expected = dns_parse:packet(Binary).
+
+
+malicious_compression_test() ->
+  Binary = <<146,129,128,128,0,1,0,0,0,0,0,0, % Header
+             % <<192, 12>> is a pointer back to the 12th byte,
+             % which is right here, causing an infinite loop.
+             192,12,0,1,0,1
+           >>,
+  {error, _} = dns_parse:packet(Binary).

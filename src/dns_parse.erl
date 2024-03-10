@@ -33,11 +33,18 @@
 
 %% Exports %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec packet(Packet :: binary()) -> dns_packet().
+-spec packet(Packet :: binary()) -> dns_packet() | {error, invalid_offset}.
 %% @doc Parses an entire DNS datagram.
 %%
 %% Produces a map of all the data contained within.
 packet(Packet) ->
+  try parse_packet(Packet)
+  catch
+    % Parsing might intentionally throw an error, so return it.
+    throw:Error -> Error
+  end.
+
+parse_packet(Packet) ->
   <<ID:16/big,
     Flags:16/big,
     NQuestions:16/big,
@@ -128,36 +135,41 @@ parse_records(Bytes, N, Datagram, Acc) ->
 parse_record_data(a, <<A, B, C, D>>, _) ->
   {A, B, C, D};
 parse_record_data(ns, Data, Packet) ->
-  decode_name_discard_data(Data, Packet);
+  decode_name_and_ignore_remainder(Data, Packet);
 parse_record_data(cname, Data, Packet) ->
-  decode_name_discard_data(Data, Packet);
+  decode_name_and_ignore_remainder(Data, Packet);
 parse_record_data(aaaa, <<A:16/big, B:16/big, C:16/big, D:16/big, E:16/big, F:16/big, G:16/big, H:16/big >>, _) ->
   {A, B, C, D, E, F, G, H};
 parse_record_data(_, Binary, _) ->
   {not_parsed, Binary}.
 
 
-decode_name_discard_data(Data, Packet) ->
+decode_name_and_ignore_remainder(Data, Packet) ->
   {Name, _} = decode_name(Data, Packet),
   Name.
 
 decode_name(Bytes, Datagram) ->
-  {ReversedLabels, Rest} = decode_name(Bytes, Datagram, []),
+  {ReversedLabels, Rest} = decode_name(Bytes, Datagram, [], []),
   Labels = [binary_to_list(Label) || Label <- lists:reverse(ReversedLabels)],
   Name = lists:flatten(lists:join(".", Labels)),
   {Name, Rest}.
 
-decode_name(<<0, Rest/binary>>, _Datagram, Labels)  ->
+decode_name(<<0, Rest/binary>>, _Datagram, Labels, _Offsets)  ->
   {Labels, Rest};
-decode_name(<<2#11:2, Offset:14, Rest/binary>>, Datagram, Labels) ->
+decode_name(<<2#11:2, Offset:14, Rest/binary>>, Datagram, Labels, Offsets) ->
+  case lists:member(Offset, Offsets) of
+    % Infinite loop detected:
+    true -> throw({error, invalid_offset});
+    _ -> ok
+  end,
   EarlierChunk = binary_part_until_end(Datagram, Offset),
-  {NewLabels, _} = decode_name(EarlierChunk, Datagram, Labels),
+  {NewLabels, _} = decode_name(EarlierChunk, Datagram, Labels, [Offset|Offsets]),
   {NewLabels, Rest};
-decode_name(<<Length, Data/binary>>, Datagram, Labels) when Length =< 63 ->
+decode_name(<<Length, Data/binary>>, Datagram, Labels, Offsets) when Length =< 63 ->
   <<Label:Length/binary, Rest/binary>> = Data,
-  decode_name(Rest, Datagram, [Label|Labels]).
+  decode_name(Rest, Datagram, [Label|Labels], Offsets).
 
-%% @doc Returns a suffix of the the binary, starting at the given offset.
+%% @doc Returns a suffix of the binary, starting at the given offset.
 %%
 %% Equivalent to the Python expression <code>binary[offset:]</code>.
 binary_part_until_end(Binary, Offset) ->
