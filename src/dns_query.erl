@@ -1,7 +1,7 @@
 %%% @doc Build a DNS query.
 -module(dns_query).
 
--export([build/2, build/3, random_id/0]).
+-export([build/2, build/3, build_response/3, random_id/0]).
 
 
 %% Types %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -36,6 +36,26 @@ build(ID, DomainName, RecordType) ->
   Question = question_to_bytes(DomainName, RecordType, in),
   [Header, Question].
 
+build_response(ID, Questions, Answers) ->
+  Flags = proplist_to_flags([response]),
+  build_dns_packet(ID, Flags, Questions, Answers).
+
+%% Creates a header for one question.
+build_dns_packet(ID, Flags, Questions, Answers) ->
+  NQuestions = length(Questions),
+  NAnswers = length(Answers),
+  Header = <<ID:16/big,
+             Flags:16/big,
+             NQuestions:16/big,
+             NAnswers:16/big,
+             0:16/big, % 0 authorities
+             0:16/big  % 0 additionals
+           >>,
+  QuestionBytes = [question_to_bytes(Q) || Q <- Questions],
+  AnswerBytes = [record_to_bytes(R) || R <- Answers],
+  [Header, QuestionBytes, AnswerBytes].
+
+
 -spec random_id() -> u16().
 %% @doc Return an random ID, suitable for a DNS query.
 random_id() ->
@@ -46,14 +66,14 @@ random_id() ->
 
 -spec proplist_to_flags([dns:flag()]) -> u16().
 proplist_to_flags(List) ->
-  proplist_to_flags(List, {0}).
+  proplist_to_flags(List, {0, 0}).
 
-proplist_to_flags([], {RD}) ->
-  %                    QR   Op   AA   TC   RD    RA   Z    Rcode
-  <<Flags:16/big>> = <<0:1, 0:4, 0:1, 0:1, RD:1, 0:1, 0:3, 0:4>>,
+proplist_to_flags([], {QR, RD}) ->
+  %                    QR    Op   AA   TC   RD    RA   Z    Rcode
+  <<Flags:16/big>> = <<QR:1, 0:4, 0:1, 0:1, RD:1, 0:1, 0:3, 0:4>>,
   Flags;
-proplist_to_flags([recursion_desired|Rest], {_}) ->
-  proplist_to_flags(Rest, {1}).
+proplist_to_flags([response|Rest], {_, RD}) -> proplist_to_flags(Rest, {1, RD});
+proplist_to_flags([recursion_desired|Rest], {QR, _}) -> proplist_to_flags(Rest, {QR, 1}).
 
 -spec header_to_bytes(ID :: u16(), Flags :: u16()) -> <<_:96>>.
 %% Creates a header for one question.
@@ -66,12 +86,32 @@ header_to_bytes(ID, Flags) ->
     0:16/big  % 0 additionals
   >>.
 
+question_to_bytes({dns_question, Name, Type, Class}) ->
+  question_to_bytes(Name, Type, Class).
+
 -spec question_to_bytes(string(), dns:record_type(), dns:class()) -> iolist().
 question_to_bytes(Name, RecordType, Class) ->
   EncodedName = encode_dns_name(Name),
   RecordTypeInt = record_type_to_number(RecordType),
   ClassInt = class_to_number(Class),
   [EncodedName, <<RecordTypeInt:16/big, ClassInt:16/big>>].
+
+record_to_bytes({dns_record, Name, Type, Class, TTL, Data}) ->
+  % Should compress, but whatever
+  BName = iolist_to_binary(encode_dns_name(Name)),
+  BType = record_type_to_number(Type),
+  BClass = class_to_number(Class),
+  BData = case Type of
+    a -> {A, B, C, D} = Data,
+         <<A, B, C, D>>
+         end,
+  DataLen = byte_size(BData),
+  <<BName/binary,
+    BType:16/big,
+    BClass:16/big,
+    TTL:32/big,
+    DataLen:16/big,
+    BData/binary>>.
 
 -spec encode_dns_name(string()) -> iolist().
 encode_dns_name(Name) ->

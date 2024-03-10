@@ -24,7 +24,8 @@ send_query(DomainName, RecordType) ->
 send_query(IPAddress, DomainName, RecordType) ->
   send_query(IPAddress, 53, DomainName, RecordType).
 
--spec send_query(inet:ip4_address(), u16(), string(), dns:record_type()) -> dns_parse:dns_packet().
+-spec send_query(inet:ip4_address(), u16(), string(), dns:record_type()) ->
+  {ok, dns_parse:dns_packet()} | {error, any}.
 %% @doc Send a DNS query to the given address and port.
 %%
 %% Builds a question for the given domain name and record type,

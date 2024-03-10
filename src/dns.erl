@@ -6,10 +6,16 @@
 
 %% Types %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--type record_type() :: a | aaaa | cname | ns | soa.  %% The type of a
+-type record_type() :: a
+                     | aaaa
+                     | cname
+                     | ns
+                     | opt
+                     | soa .  %% The type of a
 %% "resource record".
 %%
 %% See [https://datatracker.ietf.org/doc/html/rfc1035#section-3.2.2]
+%% and [https://en.wikipedia.org/wiki/List_of_DNS_record_types]
 
 -type class() :: in | cs | ch | hs. %% Record or query class.
 %% In practice, only the IN (Internet) class is used.

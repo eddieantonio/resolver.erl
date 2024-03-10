@@ -60,7 +60,7 @@ packet(Packet) ->
 
 flags_to_proplist(Flags) when is_number(Flags) ->
     flags_to_proplist(<<Flags:16/big>>);
-flags_to_proplist(<<QR:1, Opcode:4, AA:1, TC:1, RD:1, RA:1, 0:3, RCode:4>>) ->
+flags_to_proplist(<<QR:1, Opcode:4, AA:1, TC:1, RD:1, RA:1, _:3, RCode:4>>) ->
     [case QR of
          0 -> query;
          1 -> response
@@ -169,10 +169,13 @@ number_to_record_type(1) -> a;
 number_to_record_type(2) -> ns;
 number_to_record_type(5) -> cname;
 number_to_record_type(6) -> soa;
-number_to_record_type(28) -> aaaa.
+number_to_record_type(28) -> aaaa;
+number_to_record_type(41) -> opt.
 
 -spec number_to_class(u16()) -> dns:class().
 number_to_class(1) -> in;
 number_to_class(2) -> cs;
 number_to_class(3) -> ch;
-number_to_class(4) -> hs.
+number_to_class(4) -> hs;
+number_to_class(Number) ->
+  {unknown_class, Number}.
