@@ -5,7 +5,7 @@
 -export_type([record_type/0, class/0, flag/0]).
 -export_type([ttl/0, query_id/0]).
 
--include("src/dns.hrl").
+-include("include/dns.hrl").
 
 
 %% Types %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

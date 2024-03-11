@@ -2,7 +2,7 @@
 -module(dns_parse).
 -export([packet/1]).
 
--include("src/dns.hrl").
+-include_lib("include/dns.hrl").
 
 
 %% Types %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
