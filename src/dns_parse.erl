@@ -1,22 +1,13 @@
 %%% @doc Parse a DNS packet.
 -module(dns_parse).
-
 -export([packet/1]).
+
+-include("src/dns.hrl").
+
 
 %% Types %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -type u16() :: 0..65535.
-
--record(dns_question, {name :: string(),
-                       type :: dns:record_type(),
-                       class :: dns:class()}).  %% DNS question, for use within Erlang.
-
--record(dns_record, {name :: string(),
-                     type :: dns:record_type(),
-                     class :: dns:class(),
-                     ttl :: dns:ttl(),
-                     % Data depends on the record type.
-                     data :: any()}).  %% DNS record, for use within Erlang.
 
 
 % Public API %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

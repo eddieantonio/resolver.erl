@@ -5,8 +5,25 @@
 -export_type([record_type/0, class/0, flag/0]).
 -export_type([ttl/0, query_id/0]).
 
+-include("src/dns.hrl").
+
 
 %% Types %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+-type packet() :: #{id => query_id(),
+                    flags => [dns:flag()],
+                    questions => [dns:question()],
+                    answers => [dns:record()],
+                    authorities => [dns:record()],
+                    additionals => [dns:record()]
+                   }.  %% A parsed DNS packet.
+%% Can be either a query or response (depending on flags).
+
+% See src/dns.hrl for definitions of the following two:
+-type question() :: #dns_question{}.
+-type record() :: #dns_record{}.
+
 
 -type record_type() :: a
                      | aaaa
@@ -41,30 +58,6 @@
                        | name_error
                        | not_implemented
                        | refused. %% Error codes
-
--record(dns_question, {name :: string(),
-                       type :: dns:record_type(),
-                       class :: dns:class()}).  %% DNS question, for use within Erlang.
--type question() :: #dns_question{}.
-
-
--record(dns_record, {name :: string(),
-                     type :: dns:record_type(),
-                     class :: dns:class(),
-                     ttl :: ttl(),
-                     % Data depends on the record type.
-                     data :: any()}).  %% DNS record, for use within Erlang.
--type record() :: #dns_record{}.
-
-
--type packet() :: #{id => query_id(),
-                    flags => [dns:flag()],
-                    questions => [dns:question()],
-                    answers => [dns:record()],
-                    authorities => [dns:record()],
-                    additionals => [dns:record()]
-                   }.  %% A parsed DNS packet.
-%% Can be either a query or response (depending on flags).
 
 
 -type ttl() :: 0..4294967296.  %% "Time to live" for a DNS record, in seconds.
