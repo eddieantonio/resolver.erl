@@ -25,7 +25,7 @@
 build(DomainName, RecordType) ->
   build(random_id(), DomainName, RecordType).
 
--spec build(ID :: u16(), DomainName :: string(), RecordType :: dns:record_type()) -> iodata().
+-spec build(ID :: dns:query_id(), DomainName :: string(), RecordType :: dns:record_type()) -> iodata().
 %% @doc Build a DNS query to request records of the given type with the given ID.
 %%
 %% This function only builds the query; it does not actually send a query to
@@ -56,7 +56,7 @@ build_dns_packet(ID, Flags, Questions, Answers) ->
   [Header, QuestionBytes, AnswerBytes].
 
 
--spec random_id() -> u16().
+-spec random_id() -> dns:query_id().
 %% @doc Return an random ID, suitable for a DNS query.
 random_id() ->
   rand:uniform(65536) - 1.
@@ -75,7 +75,7 @@ proplist_to_flags([], {QR, RD}) ->
 proplist_to_flags([response|Rest], {_, RD}) -> proplist_to_flags(Rest, {1, RD});
 proplist_to_flags([recursion_desired|Rest], {QR, _}) -> proplist_to_flags(Rest, {QR, 1}).
 
--spec header_to_bytes(ID :: u16(), Flags :: u16()) -> <<_:96>>.
+-spec header_to_bytes(ID :: dns:query_id(), Flags :: u16()) -> <<_:96>>.
 %% Creates a header for one question.
 header_to_bytes(ID, Flags) ->
   <<ID:16/big,

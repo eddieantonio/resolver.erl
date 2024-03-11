@@ -6,7 +6,6 @@
 %% Types %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -type u16() :: 0..65535.
--type u32() :: 0..4294967296.
 
 -record(dns_question, {name :: string(),
                        type :: dns:record_type(),
@@ -15,7 +14,7 @@
 -record(dns_record, {name :: string(),
                      type :: dns:record_type(),
                      class :: dns:class(),
-                     ttl :: u32(),
+                     ttl :: dns:ttl(),
                      % Data depends on the record type.
                      data :: any()}).  %% DNS record, for use within Erlang.
 

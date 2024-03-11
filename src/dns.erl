@@ -1,9 +1,9 @@
 %%% @doc DNS data types.
 -module(dns).
 
--export_type([record_type/0, class/0, flag/0]).
--export_type([u32/0]).
 -export_type([packet/0, question/0, record/0]).
+-export_type([record_type/0, class/0, flag/0]).
+-export_type([ttl/0, query_id/0]).
 
 
 %% Types %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -51,25 +51,23 @@
 -record(dns_record, {name :: string(),
                      type :: dns:record_type(),
                      class :: dns:class(),
-                     ttl :: u32(),
+                     ttl :: ttl(),
                      % Data depends on the record type.
                      data :: any()}).  %% DNS record, for use within Erlang.
 -type record() :: #dns_record{}.
 
 
--type packet() :: #{id => u16(),
+-type packet() :: #{id => query_id(),
                     flags => [dns:flag()],
                     questions => [dns:question()],
                     answers => [dns:record()],
                     authorities => [dns:record()],
                     additionals => [dns:record()]
                    }.  %% A parsed DNS packet.
-%% Can be either query or response (depending on flags).
+%% Can be either a query or response (depending on flags).
 
 
-% Internal %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+-type ttl() :: 0..4294967296.  %% "Time to live" for a DNS record, in seconds.
 
-% TODO: rename this to query_id().
--type u16() :: 0..65535. %% Unsigned 16 bit integer.
-% TODO: rename this to ttl()
--type u32() :: 0..4294967296.  %% Unsigned 32 bit integer.
+-type query_id() :: 0..65535. %% A (more-or-less) unique ID for each query
+%% and its respective response.
