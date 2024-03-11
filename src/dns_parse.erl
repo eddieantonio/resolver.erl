@@ -2,8 +2,6 @@
 -module(dns_parse).
 
 -export([packet/1]).
--export_type([dns_packet/0]).
-
 
 %% Types %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -22,18 +20,9 @@
                      data :: any()}).  %% DNS record, for use within Erlang.
 
 
--type dns_packet() :: #{id => u16(),
-                        flags => [dns:flag()],
-                        questions => [#dns_question{}],
-                        answers => [#dns_record{}],
-                        authorities => [#dns_record{}],
-                        additionals => [#dns_record{}]
-                       }.  %% A parsed DNS record.
+% Public API %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-
-%% Exports %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--spec packet(Packet :: binary()) -> dns_packet() | {error, invalid_offset}.
+-spec packet(Packet :: binary()) -> dns:packet() | {error, invalid_offset}.
 %% @doc Parses an entire DNS datagram.
 %%
 %% Produces a map of all the data contained within.
@@ -43,6 +32,9 @@ packet(Packet) ->
     % Parsing might intentionally throw an error, so return it.
     throw:Error -> Error
   end.
+
+
+% Internal %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 parse_packet(Packet) ->
   <<ID:16/big,
@@ -98,6 +90,7 @@ number_to_response_code(5) -> refused;
 number_to_response_code(_) -> unknown.
 
 
+-spec parse_questions(binary(), non_neg_integer(), binary()) -> {[dns:question()], binary()}.
 parse_questions(Bytes, N, Datagram) ->
   parse_questions(Bytes, N, Datagram, []).
 
@@ -112,7 +105,7 @@ parse_questions(Bytes, N, Datagram, Acc) ->
   parse_questions(Remainder, N - 1, Datagram, [Current|Acc]).
 
 
--spec parse_records(binary(), non_neg_integer(), binary()) -> {[#dns_record{}], binary()}.
+-spec parse_records(binary(), non_neg_integer(), binary()) -> {[dns:record()], binary()}.
 parse_records(Bytes, N, Datagram) ->
   parse_records(Bytes, N, Datagram, []).
 
@@ -132,17 +125,12 @@ parse_records(Bytes, N, Datagram, Acc) ->
   parse_records(Remainder, N - 1, Datagram, [Current|Acc]).
 
 
-parse_record_data(a, <<A, B, C, D>>, _) ->
-  {A, B, C, D};
-parse_record_data(ns, Data, Packet) ->
-  decode_name_and_ignore_remainder(Data, Packet);
-parse_record_data(cname, Data, Packet) ->
-  decode_name_and_ignore_remainder(Data, Packet);
-parse_record_data(aaaa, <<A:16/big, B:16/big, C:16/big, D:16/big, E:16/big, F:16/big, G:16/big, H:16/big >>, _) ->
-  {A, B, C, D, E, F, G, H};
-parse_record_data(_, Binary, _) ->
-  {not_parsed, Binary}.
-
+parse_record_data(a, <<A, B, C, D>>, _) -> {A, B, C, D};
+parse_record_data(ns, Data, Packet) -> decode_name_and_ignore_remainder(Data, Packet);
+parse_record_data(cname, Data, Packet) -> decode_name_and_ignore_remainder(Data, Packet);
+parse_record_data(aaaa, Data, _) -> decode_ip6_address(Data);
+% Do not crash -- leave rest of the record unparsed:
+parse_record_data(_, Binary, _) -> {not_parsed, Binary}.
 
 decode_name_and_ignore_remainder(Data, Packet) ->
   {Name, _} = decode_name(Data, Packet),
@@ -168,6 +156,11 @@ decode_name(<<2#11:2, Offset:14, Rest/binary>>, Datagram, Labels, Offsets) ->
 decode_name(<<Length, Data/binary>>, Datagram, Labels, Offsets) when Length =< 63 ->
   <<Label:Length/binary, Rest/binary>> = Data,
   decode_name(Rest, Datagram, [Label|Labels], Offsets).
+
+%% Extract this function because the pattern match is too big for one line.
+decode_ip6_address(<<A:16/big, B:16/big, C:16/big, D:16/big, E:16/big, F:16/big, G:16/big, H:16/big >>) ->
+  {A, B, C, D, E, F, G, H}.
+
 
 %% @doc Returns a suffix of the binary, starting at the given offset.
 %%

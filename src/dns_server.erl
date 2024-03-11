@@ -31,7 +31,7 @@ handle_cast(_, State) ->
 handle_info({udp, Socket, Host, Port, Datagram}, State) ->
   Packet = dns_parse:packet(Datagram),
   #{id := ID, questions := [Question|_]} = Packet,
-  Name = get_name(Question),
+  Name = name(Question),
   {ok, Addresses} = resolve(Name),
   Answers = [{dns_record, Name, a, in, 3600, A} || A <- Addresses],
   Response = dns_query:build_response(ID, [Question], Answers),
@@ -51,7 +51,7 @@ resolve(Name) ->
     Addresses -> {ok, Addresses}
   end.
 
-get_name({dns_question, Name, _, _}) -> Name.
+name({dns_question, Name, _, _}) -> Name.
 
 %% @doc Returns a list of IPv4 addresses from the given DNS records.
 addresses(Records) ->

@@ -4,10 +4,6 @@
 -export([send_query/2, send_query/3, send_query/4]).
 
 
-%% Types %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--type u16() :: 0..65535.
-
 %% Public API %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -spec send_query(DomainName :: string(), Type :: dns:record_type()) -> any().
@@ -24,8 +20,8 @@ send_query(DomainName, RecordType) ->
 send_query(IPAddress, DomainName, RecordType) ->
   send_query(IPAddress, 53, DomainName, RecordType).
 
--spec send_query(inet:ip4_address(), u16(), string(), dns:record_type()) ->
-  {ok, dns_parse:dns_packet()} | {error, any}.
+-spec send_query(inet:ip4_address(), inet:port_number(), string(), dns:record_type()) ->
+  {ok, dns:packet()} | {error, any}.
 %% @doc Send a DNS query to the given address and port.
 %%
 %% Builds a question for the given domain name and record type,
