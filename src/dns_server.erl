@@ -4,6 +4,8 @@
 -export([start_link/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
+-include("src/dns.hrl").
+
 -define(NAME, ?MODULE).
 -record(state, {socket}).
 
@@ -33,7 +35,7 @@ handle_info({udp, Socket, Host, Port, Datagram}, State) ->
   #{id := ID, questions := [Question|_]} = Packet,
   Name = name(Question),
   {ok, Addresses} = resolve(Name),
-  Answers = [{dns_record, Name, a, in, 3600, A} || A <- Addresses],
+  Answers = [make_fake_record(Name, A) || A <- Addresses],
   Response = dns_query:build_response(ID, [Question], Answers),
   ok = gen_udp:send(Socket, Host, Port, Response),
   {noreply, State}.
@@ -51,14 +53,21 @@ resolve(Name) ->
     Addresses -> {ok, Addresses}
   end.
 
-name({dns_question, Name, _, _}) -> Name.
+%% @doc Return the domain name from a question.
+name(#dns_question{name = Name}) -> Name.
+
+%% @doc I haven't implemented this correctly, so this will have to do for now.
+make_fake_record(Name, Address) ->
+  FakeTTL = 3600, % Just make something up.
+  #dns_record{name = Name, type = a, class = in,
+              ttl = FakeTTL, data = Address}.
 
 %% @doc Returns a list of IPv4 addresses from the given DNS records.
 addresses(Records) ->
   [data(Rec) || Rec <- Records, is_a_record(Rec)].
 
 %% @doc Extracts data from a DNS record.
-data({dns_record, _Name, _Type, _Class, _TTL, Data}) -> Data.
+data(#dns_record{data = Data}) -> Data.
 %% @doc Returns true when the argument is an A record.
-is_a_record({dns_record, _Name, a, _Class, _TTL, _Data}) -> true;
+is_a_record(#dns_record{type = a}) -> true;
 is_a_record(_) -> false.
