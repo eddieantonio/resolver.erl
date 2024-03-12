@@ -9,7 +9,7 @@
 
 -export([new/0]).
 -export([add_records/2, add_records/3]).
--export([get_all_records/2, get_all_records/3]).
+-export([get_records/3, get_records/4, get_all_records/2, get_all_records/3]).
 -export([expired/1, expired/2]).
 
 -include("include/dns.hrl").
@@ -32,13 +32,13 @@
 %% system. Note that the time cannot be compared with other runtime systems.
 
 
--type result() :: {hit, nonempty_list(dns:record())} | miss | expired. %% Result of
+-type result() :: {hit, nonempty_list(dns:record())} | miss. %% Result of
 %% `get_all_records/2,3'.
 %%
 %% The domain can either have:
 %%  1. a cache hit, with at least one, valid, non-expired record
-%%  2. a cache hit, but all records are expired
-%%  3. or you can a cache miss -- no records are cached for this domain.
+%%  3. a cache miss -- no records are cached for this domain, or all relevant
+%%  records expired.
 
 
 % Public API %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -78,6 +78,25 @@ get_all_records(Cache, Name, When) ->
       {Cache, miss}
   end.
 
+-spec get_records(storage(), dns:record_type(), string()) -> {storage(), result()}.
+%% @doc Get records of the particular record type.
+%%
+%% Same as `get_records/4' with the current time.
+get_records(Cache, RecordType, Name) ->
+  get_records(Cache, RecordType, Name, erlang:monotonic_time()).
+
+%% @doc Get records of the particular record type.
+get_records(Cache, RecordType, Name, When) ->
+  {NewCache, EntireResult} = get_all_records(Cache, Name, When),
+  case EntireResult of
+    {hit, Records} ->
+      Result = only_relevant_results(RecordType, Records);
+    CacheMiss ->
+      Result = CacheMiss
+  end,
+  {NewCache, Result}.
+
+
 %% @doc Returns `true' if a cache entry has an expired record.
 %% Same as `expired/2' with the current time.
 -spec expired(cached_record()) -> boolean().
@@ -97,14 +116,20 @@ get_cached_records(Cache, Name, Entries, When) ->
     [] ->
       % Cache hit, but all entries are expired:
       NewCache = maps:remove(Name, Cache),
-      Result = expired;
-
+      Result = miss;
     _ ->
       % Cache hit!
       NewCache = Cache#{Name => NewEntries},
       Result = {hit, records(NewEntries)}
   end,
   {NewCache, Result}.
+
+only_relevant_results(Type, Records) ->
+  FilteredRecords = [R || R <- Records, R#dns_record.type =:= Type],
+  case FilteredRecords of
+    [] -> miss;
+    _ -> {hit, FilteredRecords}
+  end.
 
 %% @doc Return just the records from a list of cache entries.
 -spec records([cached_record()]) -> [dns:record()].
