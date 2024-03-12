@@ -50,7 +50,7 @@ cache_fetch_expired_record_test() ->
 
   % Just after the expiration time...
   FetchTime = half_hour() + 1,
-  {Empty, expired} = dns_cache:get_all_records(C2, Name, FetchTime).
+  {Empty, miss} = dns_cache:get_all_records(C2, Name, FetchTime).
 
 cache_inconsistent_names_test() ->
   Empty = dns_cache:new(),
@@ -65,6 +65,41 @@ cache_inconsistent_names_test() ->
   {C2, {hit, [Result]}} = dns_cache:get_all_records(C2, FetchName, FetchTime),
   "localhost" = name(Result).
 
+% Get a cached A record. This is the typical operation of the cache.
+get_cached_a_records_test() ->
+  Empty = dns_cache:new(),
+  InsertTime = 0,
+  Name = "localhost",
+  Record = dns_record_with_ttl(Name, half_hour()),
+  C1 = dns_cache:add_records(Empty, [Record], InsertTime),
+
+  % Fetch it right after:
+  FetchTime = 1,
+  {C1, {hit, [Result]}} = dns_cache:get_records(C1, a, Name, FetchTime),
+  "localhost" = name(Result).
+
+% Cache miss on an A record, but there's still a NS record in the cache.
+% This means that the resolver can still fetch the NS record later.
+get_cached_cname_records_test() ->
+  Empty = dns_cache:new(),
+  InsertTime = 0,
+  Name = "localhost",
+  Nameserver = "ns.local",
+  ARecord = dns_record_with_ttl(Name, half_hour()),
+  NSRecord = #dns_record{name=Name, type=ns, class=in, ttl=one_day(), data="ns.local"},
+  NameserverRecord = dns_record_with_ttl(Nameserver, one_day()),
+  C1 = dns_cache:add_records(Empty, [ARecord, NSRecord, NameserverRecord], InsertTime),
+
+  % Try to fetch the A record after it has expired
+  FetchTime = half_hour() + 1,
+  {C2, miss} = dns_cache:get_records(C1, a, Name, FetchTime),
+
+  % Okay, try to fetch the NS record then...
+  {C2, {hit, [NSRecord]}} = dns_cache:get_records(C2, ns, Name, FetchTime),
+
+  % Now fetch the nameserver's A record:
+  {C2, {hit, [NameserverRecord]}} = dns_cache:get_records(C2, a, Nameserver, FetchTime).
+
 
 % Utilties %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -77,3 +112,4 @@ dns_record_with_ttl(Name, TTL) ->
 
 name(#dns_record{name = Name}) -> Name.
 half_hour() -> 30 * 60.
+one_day() -> 24 * 60 * 60.
