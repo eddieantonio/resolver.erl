@@ -11,6 +11,7 @@
 -export([add_records/2, add_records/3]).
 -export([get_records/3, get_records/4, get_all_records/2, get_all_records/3]).
 -export([expired/1, expired/2]).
+-export_type([storage/0, result/0]).
 
 -include("include/dns.hrl").
 
@@ -83,7 +84,7 @@ get_all_records(Cache, Name, When) ->
 %%
 %% Same as `get_records/4' with the current time.
 get_records(Cache, RecordType, Name) ->
-  get_records(Cache, RecordType, Name, erlang:monotonic_time()).
+  get_records(Cache, RecordType, Name, right_now()).
 
 %% @doc Get records of the particular record type.
 get_records(Cache, RecordType, Name, When) ->
@@ -162,4 +163,5 @@ make_entry(Record, CreatedAt) ->
 
 -spec right_now() -> monotonic_time().
 right_now() ->
+  % For this app, time is always represented in seconds!
   erlang:monotonic_time(second).
