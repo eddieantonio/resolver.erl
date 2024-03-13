@@ -75,7 +75,7 @@ get_cached_a_records_test() ->
 
   % Fetch it right after:
   FetchTime = 1,
-  {C1, {hit, [Result]}} = dns_cache:get_records(C1, a, Name, FetchTime),
+  {C1, {hit, [Result]}} = dns_cache:get_records(C1, Name, a, FetchTime),
   "localhost" = name(Result).
 
 % Cache miss on an A record, but there's still a NS record in the cache.
@@ -92,13 +92,13 @@ get_cached_cname_records_test() ->
 
   % Try to fetch the A record after it has expired
   FetchTime = half_hour() + 1,
-  {C2, miss} = dns_cache:get_records(C1, a, Name, FetchTime),
+  {C2, miss} = dns_cache:get_records(C1, Name, a, FetchTime),
 
   % Okay, try to fetch the NS record then...
-  {C2, {hit, [NSRecord]}} = dns_cache:get_records(C2, ns, Name, FetchTime),
+  {C2, {hit, [NSRecord]}} = dns_cache:get_records(C2, Name, ns, FetchTime),
 
   % Now fetch the nameserver's A record:
-  {C2, {hit, [NameserverRecord]}} = dns_cache:get_records(C2, a, Nameserver, FetchTime).
+  {C2, {hit, [NameserverRecord]}} = dns_cache:get_records(C2, Nameserver, a, FetchTime).
 
 
 % Utilties %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

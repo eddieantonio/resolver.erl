@@ -79,15 +79,15 @@ get_all_records(Cache, Name, When) ->
       {Cache, miss}
   end.
 
--spec get_records(storage(), dns:record_type(), string()) -> {storage(), result()}.
+-spec get_records(storage(), string(), dns:record_type()) -> {storage(), result()}.
 %% @doc Get records of the particular record type.
 %%
 %% Same as `get_records/4' with the current time.
-get_records(Cache, RecordType, Name) ->
-  get_records(Cache, RecordType, Name, right_now()).
+get_records(Cache, Name, RecordType) ->
+  get_records(Cache, Name, RecordType, right_now()).
 
 %% @doc Get records of the particular record type.
-get_records(Cache, RecordType, Name, When) ->
+get_records(Cache, Name, RecordType, When) ->
   {NewCache, EntireResult} = get_all_records(Cache, Name, When),
   case EntireResult of
     {hit, Records} ->
