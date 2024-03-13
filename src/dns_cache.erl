@@ -105,8 +105,8 @@ expired(Record) ->
   expired(Record, right_now()).
 
 %% @doc Returns `true' if a cache entry has an expired record.
-expired({TimeReceived , #dns_record{ttl = Duration}}, TimeRetrieved) ->
-  TimeRetrieved > TimeReceived + Duration.
+expired({TimeCached , #dns_record{ttl = Duration}}, TimeRetrieved) ->
+  TimeRetrieved > TimeCached + Duration.
 
 
 % Internal %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -115,15 +115,14 @@ get_cached_records(Cache, Name, Entries, When) ->
   NewEntries = [E || E <- Entries, not expired(E, When)],
   case NewEntries of
     [] ->
-      % Cache hit, but all entries are expired:
+      % Cache hit, but all entries have expired.
       NewCache = maps:remove(Name, Cache),
-      Result = miss;
+      {NewCache, miss};
     _ ->
-      % Cache hit!
+      % Cache hit! Keep only non-expired records:
       NewCache = Cache#{Name => NewEntries},
-      Result = {hit, records(NewEntries)}
-  end,
-  {NewCache, Result}.
+      {NewCache, {hit, records(NewEntries)}}
+  end.
 
 only_relevant_results(Type, Records) ->
   FilteredRecords = [R || R <- Records, R#dns_record.type =:= Type],
