@@ -7,9 +7,10 @@
 -include("include/dns.hrl").
 
 -define(NAME, ?MODULE).
--record(state, {socket}).
+-record(state, {socket, cache}).
 
-% Init %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Public API %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 start_link(Port) ->
   gen_server:start_link({local, ?NAME}, ?MODULE, [Port], [{debug, [trace]}]).
@@ -21,7 +22,7 @@ init([Port]) ->
   IP = {127,0,0,1},
   {ok, Socket} = gen_udp:open(Port, [binary, {ip, IP}, {active, true}]),
   io:format("[~p] Listening on ~w:~p~n", [?NAME, IP, Port]),
-  {ok, #state{socket=Socket}}.
+  {ok, #state{socket=Socket, cache=dns_cache:new()}}.
 
 handle_call(_Message, _From, State) ->
   {noreply, State}.
@@ -29,29 +30,46 @@ handle_call(_Message, _From, State) ->
 handle_cast(_, State) ->
   {noreply, State}.
 
-% DNS Query.
-handle_info({udp, Socket, Host, Port, Datagram}, State) ->
+% DNS Query from UDP port
+handle_info({udp, Socket, Host, Port, Datagram}, #state{cache=Cache} =State) ->
   Packet = dns_parse:packet(Datagram),
   #{id := ID, questions := [Question|_]} = Packet,
   Name = name(Question),
-  {ok, Addresses} = resolve(Name),
+  {UpdatedCache, Result} = resolve(Name, Cache),
+  % Just crash if we fail to resolve
+  {ok, Addresses} = Result,
   Answers = [make_fake_record(Name, A) || A <- Addresses],
   Response = dns_query:build_response(ID, [Question], Answers),
   ok = gen_udp:send(Socket, Host, Port, Response),
-  {noreply, State}.
+  {noreply, State#state{cache=UpdatedCache}}.
 
 terminate(_, #state{socket=Socket}) ->
   ok = gen_udp:close(Socket),
   ok.
 
+
 % Internal %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-resolve(Name) ->
+-type resolve_result() :: {ok, [inet:ip4_address()]} | {error, nxdomain}.
+
+-spec resolve(string(), dns_cache:storage()) -> {dns_cache:storage(), resolve_result()}.
+resolve(Name, Cache) ->
+  CacheResult = dns_cache:get_records(Cache, a, Name),
+  process_cache_result(Name, CacheResult).
+
+process_cache_result(_, {Cache, {hit, Records}}) ->
+  % In cache! Just return the addresses.
+  {Cache, {ok, addresses(Records)}};
+process_cache_result(Name, {Cache, miss}) ->
+  % Not in cache. Do DNS resolution, and cache those records!
   {ok, #{answers := Answers}} = dns_resolver:send_query(Name, a),
-  case addresses(Answers) of
-    [] -> {error, nxdomain};
-    Addresses -> {ok, Addresses}
-  end.
+  UpdatedCache = dns_cache:add_records(Cache, Answers),
+  Result = case addresses(Answers) of
+             [] -> {error, nxdomain};
+             Addresses -> {ok, Addresses}
+           end,
+  {UpdatedCache, Result}.
+
 
 %% @doc Return the domain name from a question.
 name(#dns_question{name = Name}) -> Name.
@@ -62,6 +80,7 @@ make_fake_record(Name, Address) ->
   #dns_record{name = Name, type = a, class = in,
               ttl = FakeTTL, data = Address}.
 
+-spec addresses([dns:record()]) -> [inet:ip4_address()].
 %% @doc Returns a list of IPv4 addresses from the given DNS records.
 addresses(Records) ->
   [data(Rec) || Rec <- Records, is_a_record(Rec)].
