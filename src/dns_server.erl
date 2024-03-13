@@ -54,7 +54,7 @@ terminate(_, #state{socket=Socket}) ->
 
 -spec resolve(string(), dns_cache:storage()) -> {dns_cache:storage(), resolve_result()}.
 resolve(Name, Cache) ->
-  CacheResult = dns_cache:get_records(Cache, a, Name),
+  CacheResult = dns_cache:get_records(Cache, Name, a),
   process_cache_result(Name, CacheResult).
 
 process_cache_result(_, {Cache, {hit, Records}}) ->
